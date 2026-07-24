@@ -1410,6 +1410,14 @@ body:has(#pwBg)::before { display: none !important; }
 .hold-cell.pnl-pos .hold-val { color: var(--neon-red); text-shadow: 0 0 6px rgba(255, 46, 76, 0.4); }
 .hold-cell.pnl-neg .hold-val { color: var(--neon-green); text-shadow: 0 0 6px rgba(57, 255, 20, 0.4); }
 
+/* 手机适配 */
+@media (max-width: 480px) {
+  .hold-grid { gap: 2px; padding: 0; }
+  .hold-cell { padding: 4px 4px; min-height: 38px; flex: 1 0 18%; }
+  .hold-lbl { font-size: 8px; margin-bottom: 2px; }
+  .hold-val { font-size: 12px; }
+}
+
 /* ============ 参数列表 - 高度限制 + 数值不鲜艳 ============ */
 .ring-section .ring-left {
   min-width: 0;
@@ -1474,59 +1482,6 @@ body:has(#pwBg)::before { display: none !important; }
 .param-row.highlight .param-input { color: #ff8a9a; }  /* 红色但浅一些 */
 
 /* ============ 持有 5 行 (图二风格) ============ */
-.hold-panel {
-  background: rgba(15, 20, 35, 0.5);
-  border: 1px solid rgba(80, 200, 255, 0.25);
-  border-radius: 18px;
-  padding: 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
-  margin: 0;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-.hold-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 0;
-  padding: 4px;
-}
-.hold-cell {
-  text-align: center;
-  padding: 8px 4px;
-  border-radius: 14px;
-  min-height: 50px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  margin: 2px;
-}
-.hold-lbl {
-  font-size: 10px;
-  color: #8a9bb5;
-  margin-bottom: 4px;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-}
-.hold-val {
-  font-size: 15px;
-  font-weight: 800;
-  color: #ffffff;  /* 纯白 */
-  font-family: -apple-system, monospace;
-  letter-spacing: -0.3px;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
-}
-/* 收益 - 暗红底 + 红色 + 微光 */
-.hold-cell.pnl-pos, .hold-cell.pnl-neg {
-  background: rgba(80, 20, 30, 0.6);
-  box-shadow: 0 0 12px rgba(255, 46, 76, 0.2), inset 0 0 8px rgba(255, 46, 76, 0.1);
-}
-.hold-cell.pnl-pos .hold-val,
-.hold-cell.pnl-neg .hold-val {
-  color: #ff3850;
-  font-size: 16px;
-  text-shadow: 0 0 8px rgba(255, 46, 76, 0.4);
-}
-
 /* ============ 参数面板 - 2列3行布局 ============ */
 .param-panel {
   background: rgba(20, 26, 56, 0.35);
