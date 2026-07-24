@@ -870,10 +870,10 @@ main {
   border: none !important;
 }
 .ps-item {
-  background: transparent !important;
-  border: 1px solid var(--card-line) !important;
-  border-radius: 20px;
-  padding: 6px 8px;
+  background: rgba(20, 26, 56, 0.25) !important;
+  border: 1px solid rgba(0, 240, 255, 0.12) !important;
+  border-radius: 14px;
+  padding: 5px 8px;
   text-align: center;
   display: flex;
   align-items: center;
@@ -1373,33 +1373,39 @@ body:has(#pwBg)::before { display: none !important; }
   margin: 0;
 }
 .hold-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
+  display: flex;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  gap: 4px;
+  padding: 2px 0;
 }
 .hold-cell {
   text-align: center;
-  padding: 6px 2px;
+  padding: 6px 8px;
   border-right: 1px solid rgba(0, 240, 255, 0.15);
-  min-height: 50px;
+  min-height: 46px;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  flex: 1 0 auto;
+  min-width: 0;
 }
 .hold-cell:last-child { border-right: none; }
 .hold-lbl {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-dim);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-weight: 600;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 .hold-val {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
   color: var(--text-bright);
   font-family: -apple-system, monospace;
   letter-spacing: -0.3px;
+  white-space: nowrap;
 }
 .hold-cell.pnl-pos .hold-val { color: var(--neon-red); text-shadow: 0 0 6px rgba(255, 46, 76, 0.4); }
 .hold-cell.pnl-neg .hold-val { color: var(--neon-green); text-shadow: 0 0 6px rgba(57, 255, 20, 0.4); }

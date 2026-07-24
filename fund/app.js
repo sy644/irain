@@ -562,9 +562,13 @@ function renderSummary() {
   html += '<div class="summary-title">📊 投资汇总</div>';
   let totalInv=0, totalVal=0, totalTgt=0, totalShares=0;
   const stats = state.map(f => {
-    const inv = (f.initShares * f.basePrice) + f.buys.reduce((s,b)=>s+(b.amount||0),0);
-    const sh = f.initShares + f.buys.reduce((s,b)=>s+(b.amount/(b.price||1)),0);
-    const mv = (f.price||0)*sh;
+    const initShares = f.initShares || 0;
+    const basePrice = f.basePrice || 0;
+    const curPrice = f.price || 0;
+    const target = f.target || 0;
+    const inv = (initShares * basePrice) + f.buys.reduce((s,b)=>s+(b.amount||0),0);
+    const sh = initShares + f.buys.reduce((s,b)=>s+(b.amount/(b.price||1)),0);
+    const mv = curPrice * sh;
     const pnl = mv-inv;
     const rate = inv>0 ? (pnl/inv*100) : 0;
     const dropPct = (f.price - f.basePrice) / f.basePrice * 100;
@@ -580,7 +584,7 @@ function renderSummary() {
   html += '<div class="sb-stat"><span>总市值</span><b>' + Math.round(totalVal).toLocaleString() + '</b></div>';
   html += '<div class="sb-stat"><span>总收益</span><b style="color:' + pnlCol + '">' + (totalPnl>=0?'+':'') + Math.round(totalPnl).toLocaleString() + '</b></div>';
   html += '<div class="sb-stat"><span>总收益率</span><b style="color:' + pnlCol + '">' + totalRate + '%</b></div>';
-  html += '<div class="sb-stat"><span>完成度</span><b>' + (totalInv/totalTgt*100).toFixed(1) + '%</b></div>';
+  html += '<div class="sb-stat"><span>完成度</span><b>' + (totalTgt>0?(totalInv/totalTgt*100).toFixed(1):'0') + '%</b></div>';
   html += '<div class="sb-stat"><span>总份额</span><b>' + Math.round(totalShares).toLocaleString() + '</b></div>';
   html += '</div>';
 
@@ -695,9 +699,14 @@ function updateCardValues(i) {
   const { tier, currentAmt, currentTrigger, currentTier, currentIsBuy, neighbors } = calcCurrent(f);
   const dropPct = ((f.price - f.basePrice) / f.basePrice * 100) || 0;
   const dropColor = dropPct < 0 ? '#dc2626' : '#16a34a';
-  const invested = (f.initShares * f.basePrice) + f.buys.reduce((s, b) => s + (b.amount || 0), 0);
-  const shares = f.initShares + f.buys.reduce((s,b) => s + (b.amount/(b.price||1)), 0);
-  const pnl = (f.price || 0) * shares - invested;
+  const inv_base = (f.initShares || 0) * (f.basePrice || 0);
+  const inv_buys = f.buys.reduce((s, b) => s + (b.amount || 0), 0);
+  const invested = inv_base + inv_buys;
+  const sh_base = f.initShares || 0;
+  const sh_buys = f.buys.reduce((s,b) => s + (b.amount/(b.price||1)), 0);
+  const shares = sh_base + sh_buys;
+  const curPrice = f.price || 0;
+  const pnl = curPrice * shares - invested;
   const pnlClass = pnl > 0 ? 'pnl-pos' : (pnl < 0 ? 'pnl-neg' : '');
   const prog = invested / f.target;
   const dropEl = card.querySelector('.fund-head .fund-extra .val');
@@ -740,9 +749,14 @@ function renderFund(f, i) {
   const { tier, currentAmt, currentTrigger, currentTier, currentIsBuy, neighbors } = calcCurrent(f);
   const dropPct = ((f.price - f.basePrice) / f.basePrice * 100) || 0;
   const dropColor = dropPct < 0 ? '#dc2626' : '#16a34a';
-  const invested = (f.initShares * f.basePrice) + f.buys.reduce((s, b) => s + (b.amount || 0), 0);
-  const shares = f.initShares + f.buys.reduce((s,b) => s + (b.amount/(b.price||1)), 0);
-  const pnl = (f.price || 0) * shares - invested;
+  const inv_base = (f.initShares || 0) * (f.basePrice || 0);
+  const inv_buys = f.buys.reduce((s, b) => s + (b.amount || 0), 0);
+  const invested = inv_base + inv_buys;
+  const sh_base = f.initShares || 0;
+  const sh_buys = f.buys.reduce((s,b) => s + (b.amount/(b.price||1)), 0);
+  const shares = sh_base + sh_buys;
+  const curPrice = f.price || 0;
+  const pnl = curPrice * shares - invested;
   const pnlClass = pnl > 0 ? 'pnl-pos' : (pnl < 0 ? 'pnl-neg' : '');
   const prog = invested / f.target;
   const tierRows = buildTierTable(f);
@@ -862,11 +876,7 @@ function renderFund(f, i) {
           </table>
         </div>
       </div>
-      <div class="param-strip">
-        <div class="ps-item"><span class="lbl">倍数</span><select id="param-multi-${i}" class="param-select">${(() => { let o=""; for (const v of [1.0,1.05,1.10,1.15,1.20,1.25,1.30]) o += `<option value="${v}"${Math.abs(v-f.multi)<0.001?' selected':''}>${v.toFixed(2)}</option>`; return o; })()}</select></div>
-        <div class="ps-item"><span class="lbl">幅度</span><select id="param-step-${i}" class="param-select">${(() => { let o=""; for (const v of [0.02,0.03,0.05]) o += `<option value="${v}"${Math.abs(v-f.step)<0.001?' selected':''}>${(v*100).toFixed(0)}%</option>`; return o; })()}</select></div>
-        <div class="ps-item"><span class="lbl">档数</span><select id="param-tiers-${i}" class="param-select">${(() => { let o=""; for (let v=6; v<=16; v++) o += `<option value="${v}"${v===f.tiers?' selected':''}>${v}</option>`; return o; })()}</select></div>
-      </div>
+
       <div class="tier-section">
         <div class="section-title">📊 档位金额表</div>
         <div class="tier-grid">
@@ -897,6 +907,11 @@ function renderFund(f, i) {
             return html;
           })()}
         </div>
+      </div>
+      <div class="param-strip">
+        <div class="ps-item"><span class="lbl">倍数</span><select id="param-multi-${i}" class="param-select">${(() => { let o=""; for (const v of [1.0,1.05,1.10,1.15,1.20,1.25,1.30]) o += `<option value="${v}"${Math.abs(v-f.multi)<0.001?' selected':''}>${v.toFixed(2)}</option>`; return o; })()}</select></div>
+        <div class="ps-item"><span class="lbl">幅度</span><select id="param-step-${i}" class="param-select">${(() => { let o=""; for (const v of [0.02,0.03,0.05]) o += `<option value="${v}"${Math.abs(v-f.step)<0.001?' selected':''}>${(v*100).toFixed(0)}%</option>`; return o; })()}</select></div>
+        <div class="ps-item"><span class="lbl">档数</span><select id="param-tiers-${i}" class="param-select">${(() => { let o=""; for (let v=6; v<=16; v++) o += `<option value="${v}"${v===f.tiers?' selected':''}>${v}</option>`; return o; })()}</select></div>
       </div>
     </div>
   `;
