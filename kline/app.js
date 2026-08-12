@@ -1,28 +1,6 @@
 // ============================================
 // 自选股存储
 // ============================================
-from Ashare import *  # 导入Ashare库
-
-# 示例1：获取上证指数最近5天的日线数据
-df_daily = get_price('sh000001', frequency='1d', count=5)
-print('上证指数日线行情\n', df_daily)
-
-# 示例2：获取贵州茅台（600519）在指定日期的历史周线数据
-df_weekly = get_price('600519.XSHG', frequency='1w', count=5, end_date='2018-06-15')
-print('贵州茅台历史周线\n', df_weekly)
-
-# 示例3：获取贵州茅台的15分钟实时K线数据
-df_minute = get_price('sh600519', frequency='15m', count=5)
-print('贵州茅台15分钟线\n', df_minute)
-  const STORAGE_KEY = 'stocks_v1';
-const DEFAULT_STOCKS = [
-  { code: 'sh600519', name: '贵州茅台', market: 'sh' },
-  { code: 'sz000001', name: '平安银行', market: 'sz' },
-  { code: 'sz300750', name: '宁德时代', market: 'sz' },
-  { code: 'sh000001', name: '上证指数', market: 'sh' },
-  { code: 'sz399001', name: '深证成指', market: 'sz' },
-];
-
 function loadStocks() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
