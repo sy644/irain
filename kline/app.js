@@ -24,7 +24,6 @@ function saveStocks(list) {
 function addStock(code) {
   const list = loadStocks();
   let c = code.toLowerCase().trim();
-  // 只接受代码:6 位纯数字 自动补前缀,或 sh/sz/bj + 6位
   if (/^\d{6}$/.test(c)) {
     const head = c[0];
     if (c.startsWith('000') || c.startsWith('6') || c.startsWith('9') || c.startsWith('5')) c = 'sh' + c;
@@ -36,7 +35,6 @@ function addStock(code) {
   }
   if (list.some(s => s.code === c)) return { list, added: false, reason: 'duplicate' };
   const m = c.startsWith('sh') ? 'sh' : c.startsWith('sz') ? 'sz' : 'bj';
-  // 识别类型
   const num = c.replace(/^[a-z]+/, '');
   const h1 = num[0], h2 = num[1];
   let type = 'stock';
@@ -45,8 +43,7 @@ function addStock(code) {
   else if (h1 === '1' && (h2 === '6' || h2 === '7')) type = 'lof';
   else if (h1 === '0' && h2 === '0' && m === 'sh') type = 'index';
   else if (h1 === '3' && h2 === '9' && m === 'sz') type = 'index';
-  const name = c.toUpperCase();  // 初始名 = 代码,详情页可点标题改名
-  // 置顶:unshift 到列表头
+  const name = c.toUpperCase();
   list.unshift({ code: c, name, market: m, type });
   saveStocks(list);
   return { list, added: true };
@@ -69,61 +66,114 @@ function removeStock(code) {
 }
 
 // ============================================
-// 数据抓取(腾讯 K 线 API,自带 CORS 头)
-// 字段: [date, open, close, high, low, volume, ...optional]
+// 缓存工具（内存 + localStorage）
 // ============================================
-async function fetchKLine(code, count = 250) {
+const CACHE_EXPIRE = 5 * 60 * 1000;
+
+function getCache(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const item = JSON.parse(raw);
+    if (Date.now() - item.timestamp > CACHE_EXPIRE) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return item.data;
+  } catch { return null; }
+}
+
+function setCache(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+  } catch {}
+}
+
+// ============================================
+// 数据抓取（带超时与缓存）
+// ============================================
+async function fetchKLine(code, count = 120) {
+  const cacheKey = `kline_${code}_${count}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${encodeURIComponent(code)},day,,,${count},qfq`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const data = await res.json();
-  if (data.code !== 0) throw new Error('API error: ' + data.msg);
-  const key = Object.keys(data.data)[0];
-  const arr = (data.data[key] && (data.data[key].qfqday || data.data[key].day)) || [];
-  if (!arr.length) throw new Error('无数据');
-  return arr.map(row => ({
-    date: row[0],
-    open: +row[1],
-    close: +row[2],
-    high: +row[3],
-    low: +row[4],
-    volume: +row[5],
-  })).filter(r => r.date && !isNaN(r.open));
+  
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.code !== 0) throw new Error('API error: ' + data.msg);
+    const key = Object.keys(data.data)[0];
+    const arr = (data.data[key] && (data.data[key].qfqday || data.data[key].day)) || [];
+    if (!arr.length) throw new Error('无数据');
+    const result = arr.map(row => ({
+      date: row[0],
+      open: +row[1],
+      close: +row[2],
+      high: +row[3],
+      low: +row[4],
+      volume: +row[5],
+    })).filter(r => r.date && !isNaN(r.open));
+    
+    setCache(cacheKey, result);
+    return result;
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') throw new Error('请求超时，请稍后重试');
+    throw err;
+  }
 }
 
-// 拿基本面数据(PE/PB/换手/市值/52周高/低/涨跌停/名称/量比)
-// qt 数组字段映射: 1=名称, 2=代码, 38=换手%, 39=PE动, 44=流通市值(亿), 45=总市值(亿), 46=PB, 47=涨停, 48=跌停, 49=量比, 56=振幅%, 67=52周高, 68=52周低
 async function fetchBasic(code) {
+  const cacheKey = `basic_${code}`;
+  const cached = getCache(cacheKey);
+  if (cached) return cached;
+
   const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${encodeURIComponent(code)},day,,,1,qfq`;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  const data = await res.json();
-  if (data.code !== 0) return null;
-  const key = Object.keys(data.data)[0];
-  const node = data.data[key];
-  const qt = (node && node.qt && node.qt[key]) || [];
-  if (!Array.isArray(qt) || qt.length < 10) return null;
-  const num = i => (qt[i] !== '' && qt[i] != null) ? +qt[i] : null;
-  return {
-    name: qt[1] || code,
-    code: qt[2] || code,
-    price: num(3),
-    turnover: num(38),          // 换手率%
-    pe: num(39),                // 市盈率(动)
-    circCap: num(44),           // 流通市值 亿
-    totalCap: num(45),          // 总市值 亿
-    pb: num(46),                // 市净率
-    upperLimit: num(47),        // 涨停价
-    lowerLimit: num(48),        // 跌停价
-    volRatio: num(49),          // 量比
-    amplitude: num(56),         // 振幅%
-    high52w: num(67),           // 52周高
-    low52w: num(68),            // 52周低
-  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.code !== 0) return null;
+    const key = Object.keys(data.data)[0];
+    const node = data.data[key];
+    const qt = (node && node.qt && node.qt[key]) || [];
+    if (!Array.isArray(qt) || qt.length < 10) return null;
+    const num = i => (qt[i] !== '' && qt[i] != null) ? +qt[i] : null;
+    const result = {
+      name: qt[1] || code,
+      code: qt[2] || code,
+      price: num(3),
+      turnover: num(38),
+      pe: num(39),
+      circCap: num(44),
+      totalCap: num(45),
+      pb: num(46),
+      upperLimit: num(47),
+      lowerLimit: num(48),
+      volRatio: num(49),
+      amplitude: num(56),
+      high52w: num(67),
+      low52w: num(68),
+    };
+    setCache(cacheKey, result);
+    return result;
+  } catch {
+    clearTimeout(timeout);
+    return null;
+  }
 }
 
 // ============================================
-// 技术指标(纯 JS 计算)
+// 技术指标（全部补全）
 // ============================================
 function calcMA(closes, n) {
   const out = new Array(closes.length).fill(null);
@@ -178,7 +228,6 @@ function calcMACD(closes, fast = 12, slow = 26, signal = 9) {
   const emaFast = calcEMA(closes, fast);
   const emaSlow = calcEMA(closes, slow);
   const dif = closes.map((_, i) => emaFast[i] !== null && emaSlow[i] !== null ? emaFast[i] - emaSlow[i] : null);
-  // DEA = EMA(DIF, signal) — 用简单递归实现
   const dea = new Array(closes.length).fill(null);
   let prev = null;
   const k = 2 / (signal + 1);
@@ -266,8 +315,6 @@ function calcWR(closes, highs, lows, n = 14) {
   }
   return out;
 }
-
-// OBV 能量潮:以收盘价涨跌为正负乘以成交量累加
 function calcOBV(closes, volumes) {
   const out = new Array(closes.length).fill(0);
   for (let i = 0; i < closes.length; i++) {
@@ -278,8 +325,6 @@ function calcOBV(closes, volumes) {
   }
   return out;
 }
-
-// OBV 移动平均 + 方向
 function obvTrend(obv, short = 5, long = 20) {
   const last = obv.length - 1;
   const sma = (arr, n) => {
@@ -294,8 +339,6 @@ function obvTrend(obv, short = 5, long = 20) {
     value: obv[last],
   };
 }
-
-// VR 成交量比率 = N日内上涨日成交量总和 / 下跌日成交量总和 × 100
 function calcVR(closes, volumes, n = 26) {
   const out = new Array(closes.length).fill(null);
   for (let i = 0; i < closes.length; i++) {
@@ -311,8 +354,6 @@ function calcVR(closes, volumes, n = 26) {
   }
   return out;
 }
-
-// 均量(用于放量/缩量判断)
 function calcVolMA(volumes, n = 5) {
   const out = new Array(volumes.length).fill(null);
   let sum = 0;
@@ -336,7 +377,6 @@ function calcCCI(highs, lows, closes, n = 14) {
   return out;
 }
 function calcADX(highs, lows, closes, n = 14) {
-  // 简化版:算 +DM / -DM / TR,再算 +DI / -DI / DX / ADX
   const out = new Array(closes.length).fill(null);
   const trArr = [null], pDM = [null], nDM = [null];
   for (let i = 1; i < closes.length; i++) {
@@ -346,7 +386,6 @@ function calcADX(highs, lows, closes, n = 14) {
     nDM.push(dn > up && dn > 0 ? dn : 0);
     trArr.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])));
   }
-  // Wilder smoothing
   const smooth = arr => {
     const r = [null];
     let s = 0;
@@ -369,7 +408,6 @@ function calcADX(highs, lows, closes, n = 14) {
     const sum = pDI + nDI;
     dx[i] = sum === 0 ? 0 : 100 * Math.abs(pDI - nDI) / sum;
   }
-  // ADX = Wilder smooth of DX
   let s = 0;
   for (let i = n; i < n * 2 && i < closes.length; i++) s += dx[i] || 0;
   let prev = s / n;
@@ -381,11 +419,54 @@ function calcADX(highs, lows, closes, n = 14) {
 }
 
 // ============================================
-// 综合判定:基于多个指标投票
+// 加权常量
 // ============================================
-// 信号权重表:价格类(均线) > 动量类 > 震荡类
 const MA_WEIGHT  = { MA5: 2.0, MA10: 1.5, MA20: 1.2, MA60: 1.0 };
 const OSC_WEIGHT = { RSI: 1.3, MACD: 1.5, KDJ: 1.0, CCI: 0.8, WR: 0.8, ROC: 0.8, BOLL: 0.8, ADX: 0.5, ATR: 0.5 };
+
+// ============================================
+// 核心汇总函数（含完整卖出策略）
+// ============================================
+function calcTakeProfitStopLoss(price, pivots, boll, atrVal, ma20, ma60) {
+    const DEFAULT_ATR = price * 0.02;
+    const atr = atrVal || DEFAULT_ATR;
+    let stopLoss;
+    if (pivots && pivots.S2) {
+        stopLoss = Math.min(price - 2 * atr, pivots.S2);
+    } else {
+        stopLoss = price * 0.95;
+    }
+    stopLoss = Math.max(stopLoss, price * 0.90);
+    let targets = [];
+    if (pivots) {
+        targets = [
+            { price: pivots.R1, ratio: 0.20, label: 'R1' },
+            { price: pivots.R2, ratio: 0.30, label: 'R2' },
+            { price: pivots.R3, ratio: 0.30, label: 'R3' }
+        ];
+    } else {
+        targets = [
+            { price: price * 1.05, ratio: 0.20, label: '+5%' },
+            { price: price * 1.10, ratio: 0.30, label: '+10%' },
+            { price: price * 1.15, ratio: 0.30, label: '+15%' }
+        ];
+    }
+    targets = targets.filter(t => t.price > price);
+    if (targets.length === 0) {
+        targets.push({ price: price * 1.03, ratio: 0.50, label: '保守+3%' });
+    }
+    let totalRatio = targets.reduce((s, t) => s + t.ratio, 0);
+    if (totalRatio > 1) {
+        targets = targets.map(t => ({ ...t, ratio: t.ratio / totalRatio }));
+    }
+    const trailingStop = {
+        enabled: true,
+        trigger: price * 1.05,
+        step: price * 0.02,
+        currentStop: stopLoss
+    };
+    return { stopLoss, takeProfitLevels: targets, trailingStop };
+}
 
 function summarize(closes, highs, lows, opens, volumes, pivots) {
   const last = closes.length - 1;
@@ -408,7 +489,7 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
   const vol5 = calcVolMA(volumes, 5);
   const vol10 = calcVolMA(volumes, 10);
 
-  // ============ 指标分组(趋势 / 动量 / 波动 / 量能) ============
+  // ====== 1. 指标分组（投票） ======
   const trendGroup = [
     { name: 'MA5',  value: ma5[last],  min: 0, max: 0, weight: MA_WEIGHT.MA5, group: 'trend',
       signal: closes[last] > ma5[last]  ? '买入' : '卖出' },
@@ -445,7 +526,6 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     weight: OSC_WEIGHT.BOLL, group: 'vola',
     signal: bollPos,
   });
-  // 量能组
   const volaRatio = vol5[last] && vol10[last] ? (vol5[last] / vol10[last]) : 1;
   const volGroup = [
     { name: 'VOL 5/10', value: volaRatio, min: 0, max: 2, weight: 1.0, group: 'vol',
@@ -456,12 +536,7 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
       signal: vr[last] > 250 ? '超买区' : vr[last] < 70 ? '超卖区' : '中性' },
   ];
 
-  // 兼容旧名(供其他代码使用)
-  const mas = trendGroup;
-  const indicators = [...momentumGroup, ...volaGroup, ...volGroup];
-
-  // ============ 加权计算 ============
-  // buy/sell 计分(中性不扣分),按权重累加
+  // ====== 2. 加权计算（净得分） ======
   let buyScore = 0, sellScore = 0, totalWeight = 0;
   [...trendGroup, ...momentumGroup, ...volaGroup, ...volGroup].forEach(ind => {
     totalWeight += ind.weight;
@@ -469,13 +544,13 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     else if (ind.signal === '卖出' || ind.signal === '资金流出' ||
              ind.signal === '放量' || ind.signal === '超买' || ind.signal === '超买区') sellScore += ind.weight;
   });
-  const netScore = buyScore - sellScore;          // 净加权分
-  const scoreRatio = netScore / totalWeight;      // 标准化 [-1, +1]
+  const netScore = buyScore - sellScore;
+  const scoreRatio = netScore / totalWeight;
 
-  // ============ 趋势判断(以 MA60 方向 + 价格位置为骨) ============
+  // ====== 3. 趋势判断 ======
   let trend = '震荡';
   let trendScore = 0;
-  const ma60Dir = ma60[last] - ma60[last - 5] || 0;     // 5 日 MA60 变化
+  const ma60Dir = ma60[last] - ma60[last - 5] || 0;
   const aboveMA60 = closes[last] > ma60[last];
   const aboveMA20 = closes[last] > ma20[last];
   const aboveMA5  = closes[last] > ma5[last];
@@ -485,40 +560,32 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
   else if (ma60Dir < 0 && !aboveMA60)                    { trend = '空头';   trendScore = -1; }
   else                                                    { trend = '震荡';   trendScore = 0; }
 
-  // ============ 量价强制判据(入场前置阀门) ============
-  // 判定今日相对昨日:
-  //  - 放量定义:今日成交量 > 5日均量 * 1.5
-  //  - 缩量定义:今日成交量 < 5日均量 * 0.7
-  //  - 破位:收盘跌破关键位(MA20/MA60/枢轴 S1)
-  //  - 突破:收盘站上关键位(MA20/MA60/枢轴 R1)
+  // ====== 4. 量价强制判据（执行层） ======
   const todayVol = volumes[last];
   const avgVol5 = vol5[last] || todayVol;
   const isFangLiang = todayVol > avgVol5 * 1.5;
   const isSuoLiang = todayVol < avgVol5 * 0.7;
   const yestClose = closes[last - 1] || closes[last];
-  // 今日的关卡变化
   const brokeMA20 = yestClose >= ma20[last - 1] && closes[last] < ma20[last];
   const brokeMA60 = yestClose >= ma60[last - 1] && closes[last] < ma60[last];
   const aboveMA60Now = closes[last] > ma60[last];
   const aboveMA20Now = closes[last] > ma20[last];
-  // 总结今日量价事件
-  let vpEvent = 'normal';           // normal | fangBreak | suoBreak | fangBreakout | suoBreakout | upTrend
+  let vpEvent = 'normal';
   let vpLabel = '正常量价';
   if (isFangLiang && (brokeMA20 || brokeMA60)) { vpEvent = 'fangBreak'; vpLabel = '放量跌破均线'; }
   else if (isSuoLiang && (brokeMA20 || brokeMA60)) { vpEvent = 'suoBreak'; vpLabel = '缩量跌破均线'; }
   else if (isFangLiang && aboveMA60Now && aboveMA20Now && obvInfo.direction === 'up') { vpEvent = 'fangBreakout'; vpLabel = '放量突破上涨'; }
   else if (isSuoLiang && aboveMA60Now && obvInfo.direction === 'up') { vpEvent = 'upTrend'; vpLabel = '缩量上涨(主力锁仓?)'; }
-  // MA60 + 量价 红绿灯
-  let vpScore = 0;  // -2 ~ +2
+  let vpScore = 0;
   if (vpEvent === 'fangBreak') vpScore = -2;
   else if (vpEvent === 'suoBreak') vpScore = -1;
   else if (vpEvent === 'fangBreakout') vpScore = 2;
   else if (vpEvent === 'upTrend') vpScore = 1;
 
-  // ============ 枢轴点 + 破位检测 ============
+  // ====== 5. 枢轴点信号 ======
   const price = closes[last];
   let pivotSignal = '中性', pivotBuy = 0, pivotSell = 0, pivotLabel = '';
-  let pivotBreakdown = null, pivotBreakout = null;  // 破位 / 突破信息
+  let pivotBreakdown = null, pivotBreakout = null;
   if (pivots) {
     const p = pivots.classic;
     if (price >= p.R3)      { pivotSignal = '强阻力'; pivotSell = 2; pivotLabel = '超买区 R3+'; }
@@ -528,28 +595,31 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     else if (price >= p.S1) { pivotSignal = '偏多';   pivotBuy = 0; pivotLabel = '轴心~S1'; }
     else if (price >= p.S2) { pivotSignal = '支撑区'; pivotBuy = 1; pivotLabel = '支撑区 S1~S2'; }
     else                    { pivotSignal = '强支撑'; pivotBuy = 2; pivotLabel = '超卖区 S3-'; }
-    // 破位:昨日收在 S1 上方、今日跌破 S1
     const prev = closes[last - 1];
     if (prev >= p.S1 && price < p.S1) {
       pivotBreakdown = { level: 'S1', from: p.S1, to: p.S2, distance: p.S1 - price };
     }
-    // 突破:昨日在 R1 下方、今日站上 R1
     if (prev < p.R1 && price >= p.R1) {
       pivotBreakout = { level: 'R1', from: p.R1, target: p.R2, distance: price - p.R1 };
     }
   }
 
-  // ============ 综合判定(趋势过滤 + 加权 + 破位 + 量价前置) ============
+  // ====== 6. 综合判定（卖出策略核心） ======
   let overall = '中性', action = '观望', position = 0, confidence = 0;
+
+  // 6-a: 基于净得分 + 趋势的常规策略
   if (scoreRatio > 0.5 && trendScore >= 1) { overall = '强力买入'; action = '介入'; position = 80; }
   else if (scoreRatio > 0.2 && trendScore >= 0) { overall = '买入'; action = '建仓'; position = 50; }
   else if (scoreRatio > 0.2 && trendScore === -1) { overall = '左侧试探'; action = '极轻仓尝试'; position = 20; }
   else if (scoreRatio > 0.2 && trendScore === -2) { overall = '左侧试探'; action = '等待企稳'; position = 10; }
+  
+  // ★★★ 卖出策略（关键） ★★★
   else if (scoreRatio < -0.5 && trendScore <= -1) { overall = '强力卖出'; action = '清仓离场'; position = 0; }
   else if (scoreRatio < -0.2 && trendScore <= 0) { overall = '卖出'; action = '减仓'; position = 20; }
   else if (scoreRatio < -0.2 && trendScore >= 1) { overall = '高空防守'; action = '减仓防守'; position = 30; }
   else { overall = '中性'; action = '观望'; position = 30; }
-  // 枢轴破位/突破
+
+  // 6-b: 枢轴点破位强制减仓（风控覆盖）
   if (pivotBreakdown) {
     if (position > 30) position = 30;
     action = `跌破 ${pivotBreakdown.level},看跌 ${pivotBreakdown.to},减仓防守`;
@@ -558,18 +628,16 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     position = Math.max(position, 50);
     action = `突破 ${pivotBreakout.level},上看 ${pivotBreakout.target},顺势加仓`;
   }
-  // ============ 量价前置判据(覆盖其他) ============
-  // 放量破位:无论原 overall 是什么,都强制为"减仓回避"或"卖出"
+
+  // 6-c: 量价前置判据（一票否决）
   if (vpEvent === 'fangBreak') {
     overall = '卖出';
     action = `放量跌破${brokeMA60?'MA60':brokeMA20?'MA20':'支撑'},建议减仓回避,若次日缩量且收复再回补`;
     position = Math.min(position, 20);
   } else if (vpEvent === 'suoBreak') {
-    // 缩量破位:动能衰竭,可纳入观察池
     if (position > 30) position = 30;
     action = `缩量跌破${brokeMA60?'MA60':'MA20'},动能衰竭,左侧试错标的,严格止损`;
   } else if (vpEvent === 'fangBreakout') {
-    // 放量突破:唯一可"满仓"场景
     overall = '强力买入';
     action = `放量突破 MA60 + OBV 上行,高权重看涨,可介入`;
     position = Math.max(position, 70);
@@ -577,12 +645,12 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     if (position < 30) position = 30;
     if (overall === '中性') { overall = '买入'; action = '缩量上涨,主力锁仓可能性大,关注放量确认'; }
   }
-  // 量价背离检测:价格上涨 + OBV 流出 = 看跌信号
+
+  // 6-d: 量价背离（上涨但OBV下行 → 卖出预警）
   const priceUp = closes[last] > closes[last - 5];
   const obvDown = obvInfo.direction === 'down';
   const vpDivergence = priceUp && obvDown;
   if (vpDivergence && position > 20) {
-    // 不直接覆盖,但下调仓位
     position = Math.max(20, Math.min(position, 30));
     if (overall === '买入' || overall === '强力买入') {
       action += ' · ⚠ 量价背离,价格涨但资金流出';
@@ -590,10 +658,8 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
   }
   confidence = Math.round(Math.abs(scoreRatio) * 100);
 
-  // ============ 历史胜率回测 ============
+  // ====== 7. 历史胜率回测（调整仓位） ======
   const backtest = backtestSignal(closes, highs, lows, opens, volumes);
-
-  // 胜率调整仓位
   if (backtest.buySamples >= 20) {
     const wr = backtest.buyWinRate;
     if (wr < 0.40) position = Math.round(position * 0.5);
@@ -601,7 +667,7 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     else if (wr > 0.60) position = Math.min(100, Math.round(position * 1.1));
   }
 
-  // 异动放量 K 线列表(用于图表标记)
+  // ====== 8. 异动标记 ======
   const anomalyIdx = [];
   for (let i = Math.max(5, last - 60); i <= last; i++) {
     const v5 = vol5[i];
@@ -609,13 +675,24 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     if (volumes[i] > v5 * 1.5) anomalyIdx.push({ i, type: 'high' });
   }
 
+  // ====== 9. 止盈止损 ======
+  const tpSl = calcTakeProfitStopLoss(
+      closes[last],
+      pivots ? pivots.classic : null,
+      boll,
+      atr[last],
+      ma20[last],
+      ma60[last]
+  );
+
   return {
     overall, action, position, confidence,
     buyScore: +buyScore.toFixed(2), sellScore: +sellScore.toFixed(2),
     netScore: +netScore.toFixed(2), scoreRatio: +scoreRatio.toFixed(3),
     buy: Math.round(buyScore), sell: Math.round(sellScore),
     trend, trendScore,
-    mas, indicators, trendGroup, momentumGroup, volaGroup, volGroup,
+    mas: trendGroup, indicators: [...momentumGroup, ...volaGroup, ...volGroup],
+    trendGroup, momentumGroup, volaGroup, volGroup,
     rsi, macd, kdj, ma5, ma10, ma20, ma60, boll, atr,
     obv, obvInfo, vr, vol5, vol10, volaRatio,
     pivotSignal, pivotLabel, pivotBuy, pivotSell,
@@ -625,11 +702,13 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     vpEvent, vpLabel, vpScore, vpDivergence,
     isFangLiang, isSuoLiang, todayVol, avgVol5,
     anomalyIdx,
+    tpSl,
   };
 }
 
-// ============ 历史胜率回测 ============
-// 对过去 N 日每一天,按当日指标给出"买入"或"卖出"信号,看 5 日后表现
+// ============================================
+// 历史胜率回测
+// ============================================
 function backtestSignal(closes, highs, lows, opens, volumes, lookback = 100, holdDays = 5) {
   const N = closes.length;
   if (N < lookback + holdDays) {
@@ -667,7 +746,6 @@ function backtestSignal(closes, highs, lows, opens, volumes, lookback = 100, hol
   };
 }
 
-// 快速信号(只看 MA5/20/60 + MACD + RSI,无需全指标)
 function quickSignal(closes, highs, lows, opens) {
   const last = closes.length - 1;
   if (last < 60) return '中性';
@@ -691,7 +769,7 @@ function quickSignal(closes, highs, lows, opens) {
 }
 
 // ============================================
-// 枢轴点(经典 + 斐波那契)
+// 枢轴点
 // ============================================
 function calcPivots(high, low, close) {
   const pp = (high + low + close) / 3;
@@ -716,9 +794,7 @@ function calcPivots(high, low, close) {
   return { classic, fibonacci: fib };
 }
 
-// 根据当前价相对枢轴点的位置,生成每一档的判断
 function pivotSignal(price, p) {
-  // p: {R3,R2,R1,轴心点,S1,S2,S3}
   const last = p['轴心点'];
   if (price >= p.R3) return { label: '强阻力', cls: 'sell' };
   if (price >= p.R2) return { label: '阻力区', cls: 'sell' };
