@@ -66,10 +66,9 @@ function removeStock(code) {
 }
 
 // ============================================
-// 缓存工具（5分钟有效期）
+// 缓存工具
 // ============================================
 const CACHE_EXPIRE = 5 * 60 * 1000;
-
 function getCache(key) {
   try {
     const raw = localStorage.getItem(key);
@@ -82,7 +81,6 @@ function getCache(key) {
     return item.data;
   } catch { return null; }
 }
-
 function setCache(key, data) {
   try {
     localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
@@ -171,7 +169,7 @@ async function fetchBasic(code) {
 }
 
 // ============================================
-// 技术指标（全部保留）
+// 技术指标（完整）
 // ============================================
 function calcMA(closes, n) {
   const out = new Array(closes.length).fill(null);
@@ -423,7 +421,7 @@ const MA_WEIGHT  = { MA5: 2.0, MA10: 1.5, MA20: 1.2, MA60: 1.0 };
 const OSC_WEIGHT = { RSI: 1.3, MACD: 1.5, KDJ: 1.0, CCI: 0.8, WR: 0.8, ROC: 0.8, BOLL: 0.8, ADX: 0.5, ATR: 0.5 };
 
 // ============================================
-// 分批止盈止损计算
+// 分批止盈止损
 // ============================================
 function calcTakeProfitStopLoss(price, pivots, boll, atrVal, ma20, ma60) {
     const DEFAULT_ATR = price * 0.02;
@@ -467,7 +465,7 @@ function calcTakeProfitStopLoss(price, pivots, boll, atrVal, ma20, ma60) {
 }
 
 // ============================================
-// 综合判定（含止盈止损）
+// 综合判定
 // ============================================
 function summarize(closes, highs, lows, opens, volumes, pivots) {
   const last = closes.length - 1;
@@ -666,7 +664,7 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     if (volumes[i] > v5 * 1.5) anomalyIdx.push({ i, type: 'high' });
   }
 
-  // 计算止盈止损
+  // 止盈止损
   const tpSl = calcTakeProfitStopLoss(
       closes[last],
       pivots ? pivots.classic : null,
@@ -694,7 +692,7 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     vpEvent, vpLabel, vpScore, vpDivergence,
     isFangLiang, isSuoLiang, todayVol, avgVol5,
     anomalyIdx,
-    tpSl,   // 止盈止损数据
+    tpSl,
   };
 }
 
