@@ -5,17 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
 <title>股票详情 · 实战参谋</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="styles.css">
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <style>
-  /* 浅色主题（覆盖 styles.css 中的变量） */
+  /* 浅色主题，适配移动端 */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
     --bg: #f0f4f8;
     --bg-2: #f7fafc;
     --surface: #ffffff;
-    --surface-2: #f7fafc;
     --line: rgba(0,0,0,0.08);
-    --line-2: rgba(0,0,0,0.15);
     --text: #1a202c;
     --text-soft: #4a5568;
     --text-mute: #a0aec0;
@@ -24,10 +22,15 @@
     --accent: #3182ce;
     --warn: #d69e2e;
   }
-  body { background: var(--bg); color: var(--text); padding: 12px; }
+  body {
+    font-family: 'Outfit', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 12px;
+    -webkit-font-smoothing: antialiased;
+  }
   .wrap { max-width: 1200px; margin: 0 auto; }
 
-  /* 顶部导航 */
   .topnav { display: flex; justify-content: space-between; align-items: center; padding: 12px 0 20px; border-bottom: 1px solid var(--line); margin-bottom: 24px; flex-wrap: wrap; gap: 10px; }
   .topnav .brand { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 18px; color: var(--text); }
   .topnav .brand .logo { width: 32px; height: 32px; background: linear-gradient(135deg, #3182ce, #2b6cb0); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 18px; }
@@ -41,7 +44,6 @@
   .hero h1 { font-size: clamp(1.6rem, 5vw, 2.6rem); font-weight: 600; letter-spacing: -0.02em; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: var(--text); }
   .hero h1 em { font-style: normal; font-weight: 400; color: var(--text-mute); font-size: 0.7em; }
   .hero .sub { font-size: 12px; color: var(--text-soft); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
-  .hero .sub code { background: rgba(0,0,0,0.06); padding: 2px 8px; border-radius: 4px; }
 
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; margin-bottom: 20px; }
   .card h3 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--text); }
@@ -69,7 +71,7 @@
   .info-cell.draw-cell { grid-column: 1 / -1; }
   .info-cell.draw-cell .chart-wrap { position: relative; height: 140px; margin-top: 6px; width: 100%; }
   @media (max-width: 600px) {
-    .info-cell.draw-cell .chart-wrap { height: 80px; }
+    .info-cell.draw-cell .chart-wrap { height: 90px; }
   }
 
   .quantile { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
@@ -307,7 +309,7 @@ function renderPage(data, sum, pivots, currentPrice, change, changePct, basic) {
   const recent20ChangePct = (recent20Change / recent20Start) * 100;
   const quantile = ((currentPrice - periodLow) / (periodHigh - periodLow)) * 100;
   const code = getCodeFromURL();
-  const nameEl = findName(code);
+  const nameEl = findName(code) || code.toUpperCase();   // 防止 undefined
   const typeName = getTypeByCode(code);
 
   const verdictCls = ({
@@ -490,6 +492,7 @@ function renderPage(data, sum, pivots, currentPrice, change, changePct, basic) {
     // 判断屏幕宽度，调整字体大小
     const isMobile = window.innerWidth < 600;
     const fontSize = isMobile ? 4 : 5.5;
+    const yOffset = isMobile ? 2 : 3;
 
     svg.innerHTML = `
       <defs><linearGradient id="ddG" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#a0aec0" stop-opacity="0.1"/><stop offset="100%" stop-color="#a0aec0" stop-opacity="0.1"/></linearGradient></defs>
@@ -502,8 +505,8 @@ function renderPage(data, sum, pivots, currentPrice, change, changePct, basic) {
       <circle cx="${hX.toFixed(2)}" cy="${hY}" r="1.5" fill="#4a5568"/>
       <circle cx="${lX.toFixed(2)}" cy="${lY}" r="1.5" fill="#4a5568"/>
       <circle cx="${cX.toFixed(2)}" cy="${cY.toFixed(2)}" r="1.5" fill="#4a5568"/>
-      <text x="${((hX+lX)/2).toFixed(2)}" y="${((hY+lY)/2 - (isMobile?2:3)).toFixed(2)}" text-anchor="middle" fill="#4a5568" font-size="${fontSize}" font-family="JetBrains Mono" font-weight="600">回撤 -${drawdownVal.toFixed(1)}%</text>
-      <text x="${((lX+cX)/2).toFixed(2)}" y="${((lY+cY)/2 + (isMobile?4:6)).toFixed(2)}" text-anchor="middle" fill="#4a5568" font-size="${fontSize}" font-family="JetBrains Mono" font-weight="600">反弹 +${rebounceVal.toFixed(1)}%</text>
+      <text x="${((hX+lX)/2).toFixed(2)}" y="${((hY+lY)/2 - yOffset).toFixed(2)}" text-anchor="middle" fill="#4a5568" font-size="${fontSize}" font-family="JetBrains Mono" font-weight="600">回撤 -${drawdownVal.toFixed(1)}%</text>
+      <text x="${((lX+cX)/2).toFixed(2)}" y="${((lY+cY)/2 + yOffset + 2).toFixed(2)}" text-anchor="middle" fill="#4a5568" font-size="${fontSize}" font-family="JetBrains Mono" font-weight="600">反弹 +${rebounceVal.toFixed(1)}%</text>
     `;
   })();
 
@@ -630,16 +633,74 @@ function renderPage(data, sum, pivots, currentPrice, change, changePct, basic) {
   }
 }
 
-// 工具函数
-function bindNameEditor(code) { /* 同之前 */ }
-function bindFullscreen() { /* 同之前 */ }
-function findName(code) { /* 同之前 */ }
-function updateName(code, newName) { /* 同之前 */ }
-function getTypeByCode(code) { /* 同之前 */ }
-const sigMap = { /* 同之前 */ };
-function pillFor(s){ /* 同之前 */ }
+// ======================== 工具函数 ========================
+function bindNameEditor(code) {
+  const el = document.getElementById('editableName');
+  if (!el) return;
+  el.addEventListener('click', () => {
+    if (el.querySelector('input')) return;
+    const cur = el.textContent.trim();
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = cur;
+    input.maxLength = 12;
+    input.style.cssText = 'font:inherit;color:inherit;background:rgba(0,0,0,0.05);border:1px solid #3182ce;border-radius:6px;padding:2px 8px;outline:none;width:auto;min-width:100px';
+    el.innerHTML = '';
+    el.appendChild(input);
+    input.focus();
+    input.select();
+    const finish = (commit) => {
+      const v = input.value.trim();
+      if (commit && v && v !== cur) {
+        if (updateName(code, v)) { el.textContent = v; el.style.color = '#3182ce'; setTimeout(() => el.style.color = '', 1000); }
+        else el.textContent = cur;
+      } else el.textContent = cur;
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } else if (e.key === 'Escape') finish(false); });
+    input.addEventListener('blur', () => finish(true));
+  });
+}
 
-// ======================== K 线图绘制（完整实现） ========================
+function bindFullscreen() {
+  const card = document.getElementById('mainChartCard');
+  document.addEventListener('fullscreenchange', () => { if (window.__mainChart) setTimeout(() => window.__mainChart.resize(), 200); });
+}
+
+function findName(code) {
+  const list = loadStocks();
+  const found = list.find(s => s.code === code);
+  return found ? found.name : code.toUpperCase();
+}
+function updateName(code, newName) {
+  const list = loadStocks();
+  const found = list.find(s => s.code === code);
+  if (found) { found.name = newName; saveStocks(list); return true; }
+  return false;
+}
+function getTypeByCode(code) {
+  const list = loadStocks();
+  const found = list.find(s => s.code === code);
+  return found ? found.type : 'stock';
+}
+
+// 修复 pillFor，防止 undefined
+const sigMap = {
+  '强力买入':{cls:'strong-buy',label:'强力买入'},'买入':{cls:'buy',label:'买入'},
+  '强力卖出':{cls:'strong-sell',label:'强力卖出'},'卖出':{cls:'sell',label:'卖出'},
+  '超买':{cls:'strong-sell',label:'超买'},'超卖':{cls:'strong-buy',label:'超卖'},
+  '中性':{cls:'neutral',label:'中性'},'无趋势':{cls:'neutral',label:'无趋势'},
+  '中等波动':{cls:'neutral',label:'中等波动'},'放量':{cls:'warn',label:'放量'},
+  '缩量':{cls:'neutral',label:'缩量'},'资金流入':{cls:'buy',label:'流入'},
+  '资金流出':{cls:'sell',label:'流出'},'超买区':{cls:'strong-sell',label:'超买区'},
+  '超卖区':{cls:'strong-buy',label:'超卖区'}
+};
+function pillFor(s){
+  if (!s) return `<span class="pill neutral">—</span>`;
+  const m = sigMap[s] || {cls:'neutral', label:s};
+  return `<span class="pill ${m.cls}">${m.label}</span>`;
+}
+
+// ======================== K线图 ========================
 function drawChart(data, sum, pivots) {
   const dates = data.map(d => d.date);
   const ohlc = data.map(d => [d.open, d.close, d.low, d.high]);
@@ -770,7 +831,6 @@ function drawChart(data, sum, pivots) {
     ]
   });
 
-  // 强制 resize 确保正确渲染
   setTimeout(() => main.resize(), 100);
   window.addEventListener('resize', () => main.resize());
 }
