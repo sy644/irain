@@ -114,3 +114,141 @@ table tr.zen{border-top:2px solid var(--text);background:var(--line-soft)}
   .grid-3{grid-template-columns:1fr}
   h1{font-size:24px}
 }
+/* 全局重置 */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: #f5f7fa;
+  padding: 12px;
+  color: #1a1a2e;
+}
+
+/* 卡片容器 */
+.card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+/* 标题 */
+h1, h2, h3 {
+  font-size: 1.2rem;
+  margin-bottom: 0.5rem;
+}
+h1 { font-size: 1.5rem; }
+
+/* 网格布局：两列自适应 */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+/* 标签 */
+.type-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 30px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: #e8ecf1;
+  color: #2d3748;
+}
+.type-stock { background: #bee3f8; color: #2a69ac; }
+.type-etf   { background: #c6f6d5; color: #276749; }
+.type-lof   { background: #fefcbf; color: #975a16; }
+.type-index { background: #fbd38d; color: #9c4221; }
+
+/* 按钮 */
+.btn {
+  display: inline-block;
+  padding: 10px 16px;
+  background: #4f7df3;
+  color: #fff;
+  border: none;
+  border-radius: 30px;
+  font-size: 1rem;
+  font-weight: 500;
+  width: 100%;
+  text-align: center;
+  cursor: pointer;
+}
+.btn-secondary {
+  background: #edf2f7;
+  color: #2d3748;
+}
+.btn-danger {
+  background: #fc8181;
+  color: #fff;
+}
+
+/* 输入框 */
+.input-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.input-group input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid #d2d6dc;
+  border-radius: 30px;
+  font-size: 1rem;
+  outline: none;
+}
+.input-group input:focus {
+  border-color: #4f7df3;
+}
+
+/* 列表项 */
+.list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf2f7;
+}
+.list-item:last-child { border-bottom: none; }
+.list-item .info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.list-item .code { font-size: 0.85rem; color: #718096; }
+
+/* 信号颜色 */
+.signal-buy { color: #38a169; }
+.signal-sell { color: #e53e3e; }
+.signal-neutral { color: #718096; }
+
+/* 表格适配（如有） */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+th, td {
+  padding: 8px 6px;
+  text-align: left;
+  border-bottom: 1px solid #edf2f7;
+}
+
+/* 移动端额外优化 */
+@media (max-width: 600px) {
+  .grid-2 { grid-template-columns: 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr; }
+  .card { padding: 12px; }
+  .btn { font-size: 0.9rem; padding: 8px 12px; }
+  body { padding: 8px; }
+}
