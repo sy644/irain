@@ -9,7 +9,7 @@
     <!-- 加载 app.js，确保信号计算与详情页一致 -->
     <script src="app.js"></script>
     <style>
-        /* ===== 全局重置 & 变量 ===== */
+        /* 样式与之前完全相同，为节省篇幅此处略，您可以直接用之前的样式 */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
             --bg-primary: #f5f7fa;
@@ -40,8 +40,6 @@
             max-width: 520px;
             width: 100%;
         }
-
-        /* ===== 顶部导航 ===== */
         .header {
             display: flex;
             justify-content: space-between;
@@ -103,8 +101,6 @@
             color: var(--text-secondary);
             font-variant-numeric: tabular-nums;
         }
-
-        /* ===== 指数滚动 Ticker ===== */
         .ticker {
             flex: 1;
             min-width: 0;
@@ -150,8 +146,6 @@
             font-size: 11px;
             padding: 0 24px;
         }
-
-        /* ===== 添加栏 ===== */
         .add-bar {
             display: flex;
             gap: 8px;
@@ -213,7 +207,6 @@
             color: var(--text-muted);
             margin-top: 2px;
         }
-        /* OCR 状态覆盖层 */
         .ocr-overlay {
             position: fixed;
             inset: 0;
@@ -237,8 +230,6 @@
         .ocr-overlay .ocr-msg { color: var(--text-primary); font-size: 14px; font-weight: 600; }
         .ocr-overlay .ocr-sub { color: var(--text-muted); font-size: 12px; }
         .ocr-overlay button { margin-top: 6px; padding: 8px 18px; background: #fff; border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 8px; cursor: pointer; }
-
-        /* ===== 自选股列表（4 列表格行） ===== */
         .stock-list {
             background: var(--bg-card);
             border-radius: var(--radius);
@@ -246,7 +237,6 @@
             overflow: hidden;
             margin-bottom: 20px;
         }
-        /* 表头 */
         .stock-list .list-head {
             display: grid;
             grid-template-columns: 1.6fr 1fr 0.9fr 0.9fr;
@@ -263,8 +253,6 @@
         .stock-list .list-head .h-pct { text-align: right; }
         .stock-list .list-head .h-price { text-align: right; }
         .stock-list .list-head .h-name { padding-left: 2px; }
-
-        /* 表格行 */
         .stock-row {
             display: grid;
             grid-template-columns: 1.6fr 1fr 0.9fr 0.9fr;
@@ -289,8 +277,6 @@
         @keyframes slideOut {
             to { opacity: 0; transform: translateX(-20px); max-height: 0; padding-top: 0; padding-bottom: 0; border-width: 0; }
         }
-
-        /* 列：名字 */
         .stock-row .col-name {
             display: flex;
             flex-direction: column;
@@ -310,8 +296,6 @@
             color: var(--text-muted);
             font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
         }
-
-        /* 列：价格 */
         .stock-row .col-price {
             text-align: right;
             font-size: 16px;
@@ -320,8 +304,6 @@
             font-variant-numeric: tabular-nums;
             letter-spacing: -0.01em;
         }
-
-        /* 列：涨跌幅 */
         .stock-row .col-pct {
             text-align: right;
             font-size: 14px;
@@ -331,8 +313,6 @@
         .up { color: var(--up); }
         .down { color: var(--down); }
         .flat { color: var(--text-muted); }
-
-        /* 列：信号 */
         .stock-row .col-sig {
             text-align: center;
         }
@@ -348,8 +328,6 @@
         .signal-badge.buy   { background: rgba(229, 62, 62, 0.10); color: var(--up); }
         .signal-badge.sell  { background: rgba(56, 161, 105, 0.10); color: var(--down); }
         .signal-badge.hold  { background: rgba(214, 158, 46, 0.12); color: #b7791f; }
-
-        /* 长按进度遮罩 */
         .stock-row .hold-progress {
             position: absolute;
             inset: 0;
@@ -379,23 +357,18 @@
             font-size: 13px;
             font-weight: 600;
         }
-
         .empty-tip {
             padding: 40px 14px;
             text-align: center;
             color: var(--text-muted);
             font-size: 13px;
         }
-
-        /* ===== 底部 ===== */
         .footer {
             text-align: center;
             padding: 20px 0 8px;
             font-size: 11px;
             color: var(--text-muted);
         }
-
-        /* ===== Toast ===== */
         .toast {
             position: fixed;
             top: 20px;
@@ -416,8 +389,6 @@
             from { opacity:0; transform: translateX(-50%) translateY(-10px); }
             to { opacity:1; transform: translateX(-50%) translateY(0); }
         }
-
-        /* ===== 响应式 ===== */
         @media (max-width: 480px) {
             body { padding: 10px; }
             .header { flex-direction: column; align-items: stretch; gap: 8px; }
@@ -434,7 +405,6 @@
 <body>
 <div class="app">
 
-    <!-- ===== 顶部导航 ===== -->
     <header class="header">
         <div class="brand">
             <h1>📊 自选股 <span>智能参谋</span></h1>
@@ -449,7 +419,6 @@
         </div>
     </header>
 
-    <!-- ===== 添加栏（代码/名称 + 图片识别） ===== -->
     <div class="add-bar">
         <input id="newStockInput" placeholder="代码或名称（如 600519 / 贵州茅台）" autocomplete="off">
         <button id="addBtn">➕ 添加</button>
@@ -458,15 +427,17 @@
         <div class="hint">支持沪深北 · 代码/名称均可 · 📷 可识别持仓截图自动添加</div>
     </div>
 
-    <!-- ===== 自选股列表 ===== -->
-    <div class="stock-list" id="stockList"></div>
+    <div class="stock-list" id="stockList">
+        <!-- 加载中占位 -->
+        <div class="empty-tip">⏳ 加载自选股中…</div>
+    </div>
 
     <div class="footer">长按自选股可删除 · 60秒自动刷新</div>
 </div>
 
 <script>
 // ============================================================
-// 基础存储（与 app.js 保持一致）
+// 基础存储（修复：若 localStorage 为空数组，则回退默认）
 // ============================================================
 const STORAGE_KEY = 'stocks_v1';
 const DEFAULT_STOCKS = [
@@ -482,12 +453,15 @@ function loadStocks() {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return [...DEFAULT_STOCKS];
         const list = JSON.parse(raw);
-        return list.length ? list : [...DEFAULT_STOCKS];
+        // 若解析后为空数组，也返回默认
+        return (list && list.length) ? list : [...DEFAULT_STOCKS];
     } catch { return [...DEFAULT_STOCKS]; }
 }
+
 function saveStocks(list) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
+
 function addStock(code) {
     const list = loadStocks();
     let c = code.toLowerCase().trim();
@@ -515,6 +489,7 @@ function addStock(code) {
     saveStocks(list);
     return { list, added: true };
 }
+
 function removeStock(code) {
     const list = loadStocks().filter(s => s.code !== code);
     saveStocks(list);
@@ -522,7 +497,7 @@ function removeStock(code) {
 }
 
 // ============================================================
-// 报价接口（与 app.js 共用，但为了独立可运行，保留）
+// 报价接口（增加超时和错误静默）
 // ============================================================
 async function fetchQuotesBatch(codes) {
     if (!codes || codes.length === 0) return {};
@@ -534,14 +509,16 @@ async function fetchQuotesBatch(codes) {
         const codeStr = batch.join(',');
         const url = `https://qt.gtimg.cn/q=${codeStr}`;
         try {
-            const text = await fetch(url, { signal: AbortSignal.timeout(6000) }).then(r => r.text());
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 5000);
+            const text = await fetch(url, { signal: controller.signal }).then(r => r.text());
+            clearTimeout(timer);
             const lines = text.split('\n').filter(l => l.trim());
             for (const line of lines) {
                 const m = line.match(/v_([a-z]{2}\d{6})="(.+)"/);
                 if (!m) continue;
                 const code = m[1];
                 const f = m[2].split('~');
-                // 字段顺序（实测验证）：[1]名称 [3]当前价 [31]涨跌额 [32]涨跌幅% [36]成交量(手) [37]成交额(万)
                 results[code] = {
                     name: f[1] || code,
                     price: parseFloat(f[3]) || 0,
@@ -551,22 +528,30 @@ async function fetchQuotesBatch(codes) {
                     turnover: (parseFloat(f[37]) || 0) * 10000,
                 };
             }
-        } catch (e) { console.warn('报价获取失败', e); }
+        } catch (e) {
+            console.warn('报价批量获取失败（部分）', batch, e.message);
+        }
     }));
     return results;
 }
 
-// 获取 K 线（如果 app.js 已加载，则使用其 fetchKLine，否则用本地兜底）
 async function fetchKLine(code, count = 120) {
     if (typeof window.fetchKLine === 'function') return await window.fetchKLine(code, count);
-    // 兜底（页面单独打开时使用）
     const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${encodeURIComponent(code)},day,,,${count},qfq`;
-    const data = await (await fetch(url, { signal: AbortSignal.timeout(8000) })).json();
-    const key = Object.keys(data.data)[0];
-    const arr = (data.data[key] && (data.data[key].qfqday || data.data[key].day)) || [];
-    return arr.map(row => ({
-        date: row[0], open: +row[1], close: +row[2], high: +row[3], low: +row[4], volume: +row[5]
-    })).filter(r => r.date && !isNaN(r.open));
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const data = await fetch(url, { signal: controller.signal }).then(r => r.json());
+        clearTimeout(timer);
+        const key = Object.keys(data.data)[0];
+        const arr = (data.data[key] && (data.data[key].qfqday || data.data[key].day)) || [];
+        return arr.map(row => ({
+            date: row[0], open: +row[1], close: +row[2], high: +row[3], low: +row[4], volume: +row[5]
+        })).filter(r => r.date && !isNaN(r.open));
+    } catch (e) {
+        console.warn('K线获取失败', code, e.message);
+        return null; // 返回 null 以便上层处理
+    }
 }
 
 // ============================================================
@@ -599,113 +584,130 @@ function toast(msg) {
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 3000);
 }
-function updateTimeDisplay() {
-    const now = new Date();
-    const t = document.getElementById('updateTime');
-    if (t) t.textContent = now.toLocaleString('zh-CN', { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false });
+
+// 简化的信号 fallback（与 app.js 逻辑尽量一致）
+function fallbackSignal(closes) {
+    if (!closes || closes.length < 20) return { overall: '数据不足', action: '' };
+    const n = closes.length;
+    const ma5 = closes.slice(-5).reduce((a,b)=>a+b,0)/5;
+    const ma20 = closes.slice(-20).reduce((a,b)=>a+b,0)/20;
+    const ma60 = closes.slice(-60).reduce((a,b)=>a+b,0)/60;
+    const last = closes[n-1];
+    let score = 0;
+    if (last > ma5) score++;
+    if (last > ma20) score++;
+    if (last > ma60) score++;
+    if (ma5 > ma20) score++;
+    if (ma20 > ma60) score++;
+    // 粗略 RSI
+    let rsi = 50;
+    if (closes.length >= 15) {
+        const diffs = closes.slice(-15).map((v,i,a) => i>0 ? v-a[i-1] : 0);
+        const gains = diffs.filter(d=>d>0).reduce((a,b)=>a+b,0);
+        const losses = diffs.filter(d=>d<0).reduce((a,b)=>a-b,0);
+        if (losses > 0) rsi = 100 - 100/(1 + gains/losses);
+        else rsi = 100;
+    }
+    if (rsi < 30) score++;
+    else if (rsi > 70) score--;
+    let overall = '中性';
+    if (score >= 3) overall = '买入';
+    else if (score <= 0) overall = '卖出';
+    const action = overall === '买入' ? '均线多头' : overall === '卖出' ? '均线空头' : '观望';
+    return { overall, action };
 }
 
 // ============================================================
-// 数据加载（使用 app.js 的 summarize 保证信号一致）
+// 核心刷新函数（增强容错）
 // ============================================================
 async function refreshStocks() {
-    const stocks = loadStocks();
-    if (!stocks.length) {
-        document.getElementById('stockList').innerHTML = `
-            <div class="list-head">
-                <div class="h-name">名称</div>
-                <div class="h-price">价格</div>
-                <div class="h-pct">涨跌幅</div>
-                <div class="h-sig">信号</div>
-            </div>
-            <div class="empty-tip">暂无自选股，请添加</div>
-        `;
-        return;
-    }
+    const listContainer = document.getElementById('stockList');
+    // 先显示加载状态
+    listContainer.innerHTML = `<div class="empty-tip">⏳ 更新数据中…</div>`;
 
-    const codes = stocks.map(s => s.code);
-    let quotes = {};
-    try { quotes = await fetchQuotesBatch(codes); } catch (e) { console.warn(e); }
-
-    // 更新报价
-    for (const s of stocks) {
-        const q = quotes[s.code];
-        if (q && q.price > 0) {
-            stockDataMap[s.code] = {
-                price: q.price, change: q.change, changePercent: q.changePercent, volume: q.volume,
-                updateTime: Date.now(),
-                signal: stockDataMap[s.code]?.signal || '--',
-                action: stockDataMap[s.code]?.action || '',
-            };
-        } else if (!stockDataMap[s.code]) {
-            stockDataMap[s.code] = { price: '--', change: 0, changePercent: 0, volume: 0, updateTime: Date.now(), signal: '--', action: '' };
+    try {
+        const stocks = loadStocks();
+        if (!stocks.length) {
+            listContainer.innerHTML = `
+                <div class="list-head">
+                    <div class="h-name">名称</div>
+                    <div class="h-price">价格</div>
+                    <div class="h-pct">涨跌幅</div>
+                    <div class="h-sig">信号</div>
+                </div>
+                <div class="empty-tip">暂无自选股，请添加</div>
+            `;
+            return;
         }
-    }
 
-    // 计算信号（使用 app.js 的 summarize，如果不可用则 fallback 到 simpleSignal）
-    for (const s of stocks) {
-        const data = stockDataMap[s.code];
-        if (!data || data.price === '--') continue;
+        const codes = stocks.map(s => s.code);
+        let quotes = {};
         try {
-            const kline = await fetchKLine(s.code, 120);
-            if (kline && kline.length > 20) {
-                const closes = kline.map(d => d.close);
-                let sig;
-                if (typeof window.summarize === 'function') {
-                    const highs = kline.map(d => d.high);
-                    const lows = kline.map(d => d.low);
-                    const opens = kline.map(d => d.open);
-                    const vols = kline.map(d => d.volume);
-                    const prev = kline[kline.length-2] || kline[kline.length-1];
-                    let pivots = null;
-                    if (typeof window.calcPivots === 'function') {
-                        pivots = window.calcPivots(prev.high, prev.low, prev.close);
-                    }
-                    sig = window.summarize(closes, highs, lows, opens, vols, pivots);
-                    data.signal = sig.overall;
-                    data.action = sig.action;
-                } else {
-                    // fallback: 简单的 MA+RSI 信号，尽量与 app.js 逻辑接近
-                    const last = closes.length - 1;
-                    const ma5 = closes.slice(-5).reduce((a,b)=>a+b,0)/5;
-                    const ma20 = closes.slice(-20).reduce((a,b)=>a+b,0)/20;
-                    const ma60 = closes.slice(-60).reduce((a,b)=>a+b,0)/60;
-                    const price = closes[last];
-                    let score = 0;
-                    if (price > ma5) score++;
-                    if (price > ma20) score++;
-                    if (price > ma60) score++;
-                    if (ma5 > ma20) score++;
-                    if (ma20 > ma60) score++;
-                    // 简单 RSI
-                    let rsiVal = 50;
-                    if (closes.length >= 15) {
-                        const diff = closes.slice(-15).map((v,i,a) => i>0 ? v-a[i-1] : 0);
-                        const gains = diff.filter(d=>d>0).reduce((a,b)=>a+b,0);
-                        const losses = diff.filter(d=>d<0).reduce((a,b)=>a-b,0);
-                        if (losses > 0) rsiVal = 100 - 100/(1 + gains/losses);
-                        else rsiVal = 100;
-                    }
-                    if (rsiVal < 30) score++;
-                    else if (rsiVal > 70) score--;
-                    let overall = '中性';
-                    if (score >= 3) overall = '买入';
-                    else if (score <= 0) overall = '卖出';
-                    data.signal = overall;
-                    data.action = overall === '买入' ? '均线多头，可介入' : overall === '卖出' ? '均线空头，建议减仓' : '观望';
-                }
-            } else {
-                data.signal = '数据不足';
-                data.action = '';
-            }
+            quotes = await fetchQuotesBatch(codes);
         } catch (e) {
-            data.signal = '--';
-            data.action = '计算失败';
+            console.warn('获取报价失败，将使用占位数据', e);
         }
-    }
 
-    renderStockCards(stocks);
-    updateTimeDisplay();
+        // 先存入基础报价（即使没有也要有占位）
+        for (const s of stocks) {
+            const q = quotes[s.code];
+            if (q && q.price > 0) {
+                stockDataMap[s.code] = {
+                    price: q.price, change: q.change, changePercent: q.changePercent, volume: q.volume,
+                    updateTime: Date.now(),
+                    signal: stockDataMap[s.code]?.signal || '--',
+                    action: stockDataMap[s.code]?.action || '',
+                };
+            } else if (!stockDataMap[s.code]) {
+                stockDataMap[s.code] = { price: '--', change: 0, changePercent: 0, volume: 0, updateTime: Date.now(), signal: '--', action: '' };
+            }
+        }
+
+        // 计算信号（逐只进行，有容错）
+        for (const s of stocks) {
+            const data = stockDataMap[s.code];
+            if (!data || data.price === '--') continue;
+            try {
+                const kline = await fetchKLine(s.code, 120);
+                if (kline && kline.length > 20) {
+                    const closes = kline.map(d => d.close);
+                    let sig;
+                    if (typeof window.summarize === 'function') {
+                        const highs = kline.map(d => d.high);
+                        const lows = kline.map(d => d.low);
+                        const opens = kline.map(d => d.open);
+                        const vols = kline.map(d => d.volume);
+                        const prev = kline[kline.length-2] || kline[kline.length-1];
+                        let pivots = null;
+                        if (typeof window.calcPivots === 'function') {
+                            pivots = window.calcPivots(prev.high, prev.low, prev.close);
+                        }
+                        sig = window.summarize(closes, highs, lows, opens, vols, pivots);
+                        data.signal = sig.overall;
+                        data.action = sig.action;
+                    } else {
+                        // fallback
+                        sig = fallbackSignal(closes);
+                        data.signal = sig.overall;
+                        data.action = sig.action;
+                    }
+                } else {
+                    data.signal = '数据不足';
+                    data.action = '';
+                }
+            } catch (e) {
+                console.warn('信号计算失败', s.code, e);
+                data.signal = '--';
+                data.action = '计算失败';
+            }
+        }
+
+        renderStockCards(stocks);
+        updateTimeDisplay();
+    } catch (e) {
+        console.error('刷新自选股失败', e);
+        listContainer.innerHTML = `<div class="empty-tip">❌ 加载失败，请刷新重试</div>`;
+    }
 }
 
 function renderStockCards(stocks) {
@@ -744,14 +746,13 @@ function renderStockCards(stocks) {
         const cls = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
         const sign = change > 0 ? '+' : '';
 
-        // 信号归类
         let badgeCls = 'hold', badgeText = '观望';
         if (['强力买入','买入','左侧试探','超卖区'].includes(signal)) { badgeCls = 'buy'; badgeText = signal === '超卖区' ? '超卖' : '买入'; }
         else if (['强力卖出','卖出','高空防守','超买区'].includes(signal)) { badgeCls = 'sell'; badgeText = signal === '超买区' ? '超买' : '卖出'; }
         else if (['中性','观望','持有','--'].includes(signal)) { badgeCls = 'hold'; badgeText = signal === '--' ? '观望' : (signal === '中性' ? '持有' : '观望'); }
 
         html += `
-            <div class="stock-row" data-code="${s.code}" data-action="${signal === '--' ? '计算中' : ''}">
+            <div class="stock-row" data-code="${s.code}">
                 <div class="hold-progress"><span class="progress-text">松开取消</span></div>
                 <div class="col-name">
                     <div class="name">${s.name}</div>
@@ -779,7 +780,7 @@ function renderStockCards(stocks) {
 }
 
 // ============================================================
-// 长按删除
+// 长按删除（不变）
 // ============================================================
 function bindLongPressDelete(container) {
     const LONG_PRESS_MS = 700;
@@ -828,7 +829,6 @@ function bindLongPressDelete(container) {
             rafId = requestAnimationFrame(animate);
         };
 
-        // 触摸事件
         row.addEventListener('touchstart', (e) => {
             const t = e.touches[0];
             start(t.clientX, t.clientY);
@@ -842,7 +842,6 @@ function bindLongPressDelete(container) {
         row.addEventListener('touchend', cancel);
         row.addEventListener('touchcancel', cancel);
 
-        // 鼠标事件
         row.addEventListener('mousedown', (e) => {
             if (e.button !== 0) return;
             start(e.clientX, e.clientY);
@@ -856,7 +855,7 @@ function bindLongPressDelete(container) {
 }
 
 // ============================================================
-// 添加逻辑（代码/名称/图片OCR）
+// 添加逻辑（不变）
 // ============================================================
 document.getElementById('addBtn').addEventListener('click', () => {
     const input = document.getElementById('newStockInput').value.trim();
@@ -874,7 +873,6 @@ document.getElementById('addBtn').addEventListener('click', () => {
         return;
     }
 
-    // 名称匹配
     const allKnown = [...DEFAULT_STOCKS, ...loadStocks()];
     const unique = {};
     allKnown.forEach(s => unique[s.code] = s);
@@ -903,14 +901,12 @@ document.getElementById('newStockInput').addEventListener('keydown', (e) => {
 });
 
 // ============================================================
-// 图片 OCR 识别（Tesseract.js）
+// OCR 识别（不变）
 // ============================================================
 const ocrBtn = document.getElementById('ocrBtn');
 const ocrFile = document.getElementById('ocrFile');
 
-ocrBtn.addEventListener('click', () => {
-    ocrFile.click();
-});
+ocrBtn.addEventListener('click', () => { ocrFile.click(); });
 let isOcrCanceled = false;
 
 ocrFile.addEventListener('change', async (e) => {
@@ -942,8 +938,7 @@ ocrFile.addEventListener('change', async (e) => {
         }
 
         updateOcrOverlay(`✅ 识别到 ${codes.length} 个代码`, codes.join(', '));
-        let addedCount = 0;
-        let dupCount = 0;
+        let addedCount = 0, dupCount = 0;
         for (const code of codes) {
             const res = addStock(code);
             if (res.added) addedCount++;
@@ -965,19 +960,16 @@ function extractStockCodes(text) {
     if (!text) return [];
     const normalized = text.replace(/[\s\n\r]+/g, ' ');
     const results = new Set();
-
     const prefixed = normalized.match(/\b([a-z]{2})\s*(\d{6})\b/gi) || [];
     for (const m of prefixed) {
         const [, prefix, num] = m.match(/([a-z]{2})\s*(\d{6})/i);
         const p = prefix.toLowerCase();
         if (['sh','sz','bj'].includes(p)) results.add(p + num);
     }
-
     const plain = normalized.match(/\b(\d{6})\b/g) || [];
     for (const num of plain) {
         if (/^[0-8]\d{5}$/.test(num)) results.add(num);
     }
-
     return Array.from(results).slice(0, 20);
 }
 
@@ -1061,15 +1053,13 @@ setInterval(() => {
 }, 1000);
 
 // ============================================================
-// 初始
+// 初始化
 // ============================================================
 window.addEventListener('load', () => {
     refreshStocks();
     loadMarketData();
     setInterval(refreshStocks, 60000);
     setInterval(loadMarketData, 60000);
-    updateTimeDisplay();
-    setInterval(updateTimeDisplay, 1000);
 });
 </script>
 </body>
