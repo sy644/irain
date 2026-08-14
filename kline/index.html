@@ -17,6 +17,12 @@
             padding: 0;
             box-sizing: border-box;
         }
+        html, body {
+            overflow-x: hidden;        /* 防止任何子元素溢出导致页面横向滚动条 */
+            max-width: 100vw;
+        }
+            box-sizing: border-box;
+        }
         :root {
             --bg-primary: #f5f7fa;
             --bg-card: #ffffff;
@@ -59,6 +65,8 @@
             margin-bottom: 14px;
             flex-wrap: wrap;
             gap: 12px;
+            min-width: 0;          /* 关键：让 .info 真的能被压缩 */
+            max-width: 100%;
         }
         .header .brand {
             display: flex;
@@ -82,6 +90,8 @@
             gap: 16px;
             font-size: 12px;
             color: var(--text-secondary);
+            min-width: 0;          /* 关键：允许自身被父 .header 压缩 */
+            flex: 1 1 0;           /* 平分剩余空间 */
         }
         .header .info .time {
             font-weight: 500;
@@ -117,7 +127,8 @@
 
         /* ===== 指数滚动 Ticker ===== */
         .ticker {
-            flex: 1;
+            flex: 1 1 0;
+            width: 0;              /* 关键：让 flex 真的从 0 开始分配 */
             min-width: 0;
             overflow: hidden;
             position: relative;
@@ -591,6 +602,7 @@
     </div>
 
     <script>
+    (function(){
         // ============================================================
         // 基础存储（与 app.js 保持一致）
         // ============================================================
@@ -1285,6 +1297,7 @@
             updateTimeDisplay();
             setInterval(updateTimeDisplay, 1000);
         });
+    })();
     </script>
 </body>
 </html>
