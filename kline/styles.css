@@ -1,5 +1,6 @@
 /* ============================================
-   共享样式 · Data UI 模式
+   共享样式 · Data UI 模式（完整版）
+   新增：搜索栏、股票卡片、信号徽章、更新时间、网格布局
 ============================================ */
 :root{
   --bg:#fafafa;
@@ -23,6 +24,8 @@
   --neutral:#94a3b8;
   --neutral-soft:#1a2138;
   --neutral-text:#9aa5b8;
+  --radius:18px;
+  --radius-sm:12px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:var(--bg);color:var(--text);font-family:'Outfit','PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
@@ -56,7 +59,7 @@ section{margin-top:40px}
 .sec-head .action{font-size:13px;color:var(--text-soft)}
 
 /* Card primitives */
-.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:24px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:24px}
 .card h3{font-size:14px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:8px}
 .card h3 svg{color:var(--text-soft)}
 .grid-2{display:grid;grid-template-columns:1.3fr 1fr;gap:24px;margin-top:24px}
@@ -105,150 +108,162 @@ table tr.zen{border-top:2px solid var(--text);background:var(--line-soft)}
 .empty{text-align:center;padding:60px 20px;color:var(--text-mute);font-size:13px}
 .empty svg{margin:0 auto 16px;display:block;color:var(--text-mute);opacity:0.4}
 
-/* Footer */
-.foot{margin-top:64px;padding-top:24px;border-top:1px solid var(--line);color:var(--text-mute);font-size:12px;display:flex;justify-content:space-between}
+/* ============================================
+   🆕 首页增强样式（搜索、卡片、信号、更新时间）
+============================================ */
 
-/* Responsive */
-@media (max-width:900px){
-  .grid-2{grid-template-columns:1fr}
-  .grid-3{grid-template-columns:1fr}
-  h1{font-size:24px}
-}
-/* 全局重置 */
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background: #f5f7fa;
-  padding: 12px;
-  color: #1a1a2e;
-}
-
-/* 卡片容器 */
-.card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 16px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
-
-/* 标题 */
-h1, h2, h3 {
-  font-size: 1.2rem;
-  margin-bottom: 0.5rem;
-}
-h1 { font-size: 1.5rem; }
-
-/* 网格布局：两列自适应 */
-.grid-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-.grid-3 {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
-}
-
-/* 标签 */
-.type-pill {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 30px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  background: #e8ecf1;
-  color: #2d3748;
-}
-.type-stock { background: #bee3f8; color: #2a69ac; }
-.type-etf   { background: #c6f6d5; color: #276749; }
-.type-lof   { background: #fefcbf; color: #975a16; }
-.type-index { background: #fbd38d; color: #9c4221; }
-
-/* 按钮 */
-.btn {
-  display: inline-block;
-  padding: 10px 16px;
-  background: #4f7df3;
-  color: #fff;
-  border: none;
-  border-radius: 30px;
-  font-size: 1rem;
-  font-weight: 500;
-  width: 100%;
-  text-align: center;
-  cursor: pointer;
-}
-.btn-secondary {
-  background: #edf2f7;
-  color: #2d3748;
-}
-.btn-danger {
-  background: #fc8181;
-  color: #fff;
-}
-
-/* 输入框 */
-.input-group {
+/* --- 搜索栏 --- */
+.search-bar {
   display: flex;
   gap: 8px;
-  margin-bottom: 12px;
+  flex: 1 1 300px;
 }
-.input-group input {
+.search-bar input {
   flex: 1;
-  padding: 10px 14px;
-  border: 1px solid #d2d6dc;
-  border-radius: 30px;
-  font-size: 1rem;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  background: var(--surface);
+  color: var(--text);
   outline: none;
+  transition: border-color 0.2s;
 }
-.input-group input:focus {
-  border-color: #4f7df3;
+.search-bar input:focus {
+  border-color: var(--accent);
+}
+.search-bar input::placeholder {
+  color: var(--text-mute);
+}
+.search-bar .btn {
+  padding: 10px 20px;
+  background: var(--text);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.search-bar .btn:hover {
+  background: #000;
 }
 
-/* 列表项 */
-.list-item {
+/* --- 更新时间指示器 --- */
+.update-info {
+  font-size: 13px;
+  color: var(--text-soft);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.update-info .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.update-info .dot.fresh { background: var(--down); }
+.update-info .dot.stale { background: var(--warn); }
+.update-info .dot.old { background: var(--up); }
+
+/* --- 股票卡片网格 --- */
+.stock-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
+
+/* --- 股票卡片 --- */
+.stock-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 18px 20px 20px;
+  border: 1px solid var(--line);
+  transition: transform 0.15s, box-shadow 0.2s;
+}
+.stock-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+}
+.stock-card .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 0;
-  border-bottom: 1px solid #edf2f7;
+  margin-bottom: 6px;
 }
-.list-item:last-child { border-bottom: none; }
-.list-item .info {
+.stock-card .stock-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+.stock-card .stock-code {
+  font-size: 12px;
+  color: var(--text-mute);
+  background: var(--surface-2);
+  padding: 2px 10px;
+  border-radius: 20px;
+}
+.stock-card .price-row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 12px;
+  margin: 6px 0 4px;
 }
-.list-item .code { font-size: 0.85rem; color: #718096; }
+.stock-card .price {
+  font-size: 26px;
+  font-weight: 700;
+}
+.stock-card .change {
+  font-size: 16px;
+  font-weight: 500;
+}
+.stock-card .change.up { color: var(--up); }
+.stock-card .change.down { color: var(--down); }
+.stock-card .volume {
+  font-size: 13px;
+  color: var(--text-mute);
+  margin-top: 2px;
+}
+.stock-card .card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-mute);
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+}
+.stock-card .update-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stock-card .action-text {
+  font-weight: 500;
+  color: var(--text);
+  font-size: 13px;
+}
 
-/* 信号颜色 */
-.signal-buy { color: #38a169; }
-.signal-sell { color: #e53e3e; }
-.signal-neutral { color: #718096; }
+/* --- 信号徽章 --- */
+.signal-badge {
+  display: inline-block;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+.signal-buy { background: var(--buy-soft); color: var(--buy); }
+.signal-sell { background: var(--sell-soft); color: var(--sell); }
+.signal-hold { background: var(--warn-soft); color: #b45309; }
+.signal-neutral { background: var(--neutral-soft); color: var(--neutral-text); }
+.signal-strongbuy { background: #5a0a18; color: #ff4565; }
+.signal-strongsell { background: #0a4a2a; color: #00e88a; }
 
-/* 表格适配（如有） */
-.table-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-th, td {
-  padding: 8px 6px;
-  text-align: left;
-  border-bottom: 1px solid #edf2f7;
-}
-
-/* 移动端额外优化 */
-@media (max-width: 600px) {
-  .grid-2 { grid-template-columns: 1fr; }
-  .grid-3 { grid-template-columns: 1fr 1fr; }
-  .card { padding: 12px; }
-  .btn { font-size: 0.9rem; padding: 8px 12px; }
-  body { padding: 8px; }
-}
+/* --- 卡片内信号与操作组合 --- */
+.stock-card .signal-area {
+  display: flex;
+  align
