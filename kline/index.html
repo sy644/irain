@@ -33,26 +33,6 @@
         .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #22c55e; margin-right: 5px; animation: pulse 2s infinite; }
         @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
 
-        .search-bar {
-            display: flex;
-            gap: 8px;
-            flex: 1 1 280px;
-            min-width: 160px;
-        }
-        .search-bar input {
-            flex: 1;
-            padding: 8px 14px;
-            background: #0b0b18;
-            border: 1px solid rgba(255,255,255,.1);
-            border-radius: 10px;
-            color: #ddd;
-            font-size: 13px;
-            outline: none;
-            font-family: inherit;
-        }
-        .search-bar input:focus { border-color: #4444aa; }
-        .search-bar input::placeholder { color: #555; }
-
         .tabs {
             display: flex;
             gap: 6px;
@@ -178,7 +158,7 @@
         .dot.stale { background: #f59e0b; }
         .dot.old { background: #f23645; }
 
-        /* 原有的指数条和ETF网格（保留） */
+        /* ETF 面板样式 */
         .index-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 14px; }
         .index-item {
             flex-shrink: 0; background: #14142a; border-radius: 10px; padding: 10px 14px; min-width: 115px;
@@ -224,7 +204,7 @@
             border: 1px dashed rgba(255,255,255,.1); margin-bottom: 14px; flex-wrap: wrap; align-items: center;
         }
         .add-bar input {
-            flex: 1; min-width: 80px; background: #0b0b18; border: 1px solid rgba(255,255,255,.1); border-radius: 8px;
+            flex: 1; min-width: 120px; background: #0b0b18; border: 1px solid rgba(255,255,255,.1); border-radius: 8px;
             padding: 8px 10px; color: #ddd; font-size: 13px; outline: none; font-family: inherit;
         }
         .add-bar input:focus { border-color: #4444aa; }
@@ -249,18 +229,14 @@
             .stock-card { padding: 10px; }
             .stock-card .price { font-size: 17px; }
             .header { flex-direction: column; align-items: stretch; }
-            .search-bar { flex: 1; }
         }
     </style>
 </head>
 <body>
 
 <div class="header">
-    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+    <div style="display:flex; align-items:center; gap:10px;">
         <h1>📊 自选股 <span>智能参谋</span></h1>
-        <div class="search-bar">
-            <input id="searchInput" placeholder="搜索名称或代码..." autocomplete="off">
-        </div>
     </div>
     <div class="info">
         <div><span class="status-dot"></span><span class="time" id="updateTime">--</span></div>
@@ -277,14 +253,13 @@
 <div class="panel active" id="panel-main">
     <div class="stock-grid" id="stockGrid"></div>
     <div class="add-bar">
-        <input id="newCode" placeholder="股票代码" style="max-width:130px" inputmode="numeric">
-        <input id="newName" placeholder="名称（可选）" style="max-width:120px">
+        <input id="newStockInput" placeholder="输入代码或名称（如 600519 或 贵州茅台）" autocomplete="off">
         <button id="addBtn">➕ 添加</button>
-        <div class="hint">支持沪深/北交所 · 6位代码自动识别市场</div>
+        <div class="hint">支持沪深/北交所 · 输入名称或6位代码均可</div>
     </div>
 </div>
 
-<!-- 宽基ETF面板（保留） -->
+<!-- 宽基ETF面板 -->
 <div class="panel" id="panel-etf">
     <div class="index-strip" id="indexStrip"></div>
     <div class="etf-grid" id="etfGrid"></div>
@@ -295,12 +270,11 @@
 <script src="app.js"></script>
 <script>
 // ============================================================
-// 首页：自选股展示 + 搜索 + 信号显示 + 更新时间
+// 首页：自选股展示 + 智能添加（支持名称/代码） + 信号显示
 // ============================================================
 
 // ---------- 全局状态 ----------
 let stockDataMap = {};          // { code: { price, change, changePercent, volume, signal, action, updateTime } }
-let timerRefresh = null;
 let countdownSec = 60;
 
 const DEFAULT_ETFS = [
@@ -313,23 +287,12 @@ const DEFAULT_ETFS = [
 ];
 
 // ---------- 工具函数 ----------
-function loadC() {
-    try { return JSON.parse(localStorage.getItem('myEtfs') || '[]'); } catch(e){ return []; }
-}
-function saveC(a) { localStorage.setItem('myEtfs', JSON.stringify(a)); }
-function allEtfs() { return [...DEFAULT_ETFS, ...loadC()]; }
-
 function toast(m) {
     const e = document.createElement('div');
     e.className = 'toast';
     e.textContent = m;
     document.body.appendChild(e);
     setTimeout(() => e.remove(), 3000);
-}
-
-async function fj(u) {
-    const r = await fetch(u, { signal: AbortSignal.timeout(8000) });
-    return r.json();
 }
 
 // ========== 修正：腾讯qt字段索引 ==========
@@ -376,7 +339,6 @@ async function getKLine(code, count = 120) {
     if (typeof window.fetchKLine === 'function') {
         return await window.fetchKLine(code, count);
     } else {
-        // 降级：直接调用app.js中暴露的
         return await fetchKLine(code, count);
     }
 }
@@ -398,11 +360,11 @@ async function refreshStocks() {
         console.warn('获取报价失败，使用缓存', e);
     }
 
-    // 2. 更新 stockDataMap（至少保留价格信息）
+    // 2. 更新 stockDataMap
     for (const s of stocks) {
         const code = s.code;
         const q = quotes[code];
-        if (q) {
+        if (q && q.price > 0) {
             stockDataMap[code] = {
                 price: q.price,
                 change: q.change,
@@ -413,7 +375,7 @@ async function refreshStocks() {
                 action: stockDataMap[code]?.action || '',
             };
         } else {
-            // 如果没有新报价，保留旧数据或占位
+            // 无有效报价，保留旧数据或占位
             if (!stockDataMap[code]) {
                 stockDataMap[code] = {
                     price: '--',
@@ -428,10 +390,11 @@ async function refreshStocks() {
         }
     }
 
-    // 3. 异步计算信号（使用K线 + summarize）
-    //   每个股票独立计算，不阻塞渲染
+    // 3. 异步计算信号（仅当有K线且报价有效）
     for (const s of stocks) {
         const code = s.code;
+        const data = stockDataMap[code];
+        if (!data || data.price === '--') continue; // 无报价不计算信号
         try {
             const kline = await getKLine(code, 120);
             if (kline && kline.length > 60) {
@@ -445,25 +408,18 @@ async function refreshStocks() {
                 const prevLow = lows[lows.length - 2] || lows[lows.length - 1];
                 const pivots = calcPivots(prevHigh, prevLow, prevClose);
                 const sig = summarize(closes, highs, lows, opens, volumes, pivots);
-                if (stockDataMap[code]) {
-                    stockDataMap[code].signal = sig.overall;
-                    stockDataMap[code].action = sig.action;
-                    stockDataMap[code].position = sig.position;
-                    stockDataMap[code].confidence = sig.confidence;
-                }
+                stockDataMap[code].signal = sig.overall;
+                stockDataMap[code].action = sig.action;
+                stockDataMap[code].position = sig.position;
+                stockDataMap[code].confidence = sig.confidence;
             } else {
-                // 数据不足，标记为中性
-                if (stockDataMap[code]) {
-                    stockDataMap[code].signal = '数据不足';
-                    stockDataMap[code].action = '';
-                }
+                stockDataMap[code].signal = '数据不足';
+                stockDataMap[code].action = '';
             }
         } catch (e) {
             console.warn(`信号计算失败 ${code}`, e);
-            if (stockDataMap[code]) {
-                stockDataMap[code].signal = '--';
-                stockDataMap[code].action = '计算失败';
-            }
+            stockDataMap[code].signal = '--';
+            stockDataMap[code].action = '计算失败';
         }
     }
 
@@ -473,41 +429,32 @@ async function refreshStocks() {
 }
 
 // ---------- 渲染自选股卡片 ----------
-function renderStockCards(stocks, filterText = '') {
+function renderStockCards(stocks) {
     const grid = document.getElementById('stockGrid');
-    const keyword = filterText.trim().toLowerCase();
-    const filtered = stocks.filter(s => {
-        if (!keyword) return true;
-        return s.name.toLowerCase().includes(keyword) || s.code.toLowerCase().includes(keyword);
-    });
-
-    if (!filtered.length) {
-        grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:#666; padding:30px 0;">没有匹配的股票</div>`;
+    if (!stocks.length) {
+        grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:#666; padding:30px 0;">暂无自选股，请添加</div>`;
         return;
     }
 
     let html = '';
-    for (const s of filtered) {
+    for (const s of stocks) {
         const data = stockDataMap[s.code] || {};
         const price = data.price ?? '--';
         const change = data.change ?? 0;
         const changePercent = data.changePercent ?? 0;
-        const volume = data.volume ?? 0;
         const signal = data.signal || '--';
         const action = data.action || '';
         const updateTime = data.updateTime ? formatTime(data.updateTime) : '--';
-        const isFresh = data.updateTime && (Date.now() - data.updateTime < 5 * 60 * 1000); // 5分钟内
+        const isFresh = data.updateTime && (Date.now() - data.updateTime < 5 * 60 * 1000);
 
-        // 格式化价格和涨跌
+        // 格式化
         const priceDisplay = typeof price === 'number' ? price.toFixed(2) : price;
         const changeDisplay = typeof change === 'number' ? change.toFixed(2) : '0.00';
         const changePctDisplay = typeof changePercent === 'number' ? changePercent.toFixed(2) : '0.00';
         const changeClass = change >= 0 ? 'up' : 'down';
         const sign = change >= 0 ? '+' : '';
 
-        const volText = volume >= 1e4 ? (volume/1e4).toFixed(0) + '万' : volume.toFixed(0);
-
-        // 信号徽章样式
+        // 信号徽章
         let badgeClass = 'neutral';
         let badgeText = signal;
         if (['强力买入','买入','左侧试探'].includes(signal)) { badgeClass = 'buy'; badgeText = '买入'; }
@@ -516,8 +463,6 @@ function renderStockCards(stocks, filterText = '') {
         else { badgeClass = 'neutral'; badgeText = signal; }
 
         const dotClass = isFresh ? 'fresh' : (data.updateTime ? 'stale' : 'old');
-
-        // 截断过长的action（如带小数的数值）
         const actionDisplay = action.length > 30 ? action.slice(0, 28) + '…' : action;
 
         html += `
@@ -546,7 +491,7 @@ function renderStockCards(stocks, filterText = '') {
     }
     grid.innerHTML = html;
 
-    // 点击卡片跳转到详情
+    // 点击卡片跳转详情
     grid.querySelectorAll('.stock-card').forEach(card => {
         card.addEventListener('click', () => {
             const code = card.dataset.code;
@@ -566,28 +511,54 @@ function updateTimeDisplay() {
     document.getElementById('updateTime').textContent = now.toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
-// ---------- 搜索过滤 ----------
-const searchInput = document.getElementById('searchInput');
-searchInput.addEventListener('input', (e) => {
-    const stocks = loadStocks();
-    renderStockCards(stocks, e.target.value);
-});
-
-// ---------- 添加自选股 ----------
+// ---------- 添加自选股（支持名称或代码） ----------
 document.getElementById('addBtn').addEventListener('click', () => {
-    const code = document.getElementById('newCode').value.trim();
-    const name = document.getElementById('newName').value.trim();
-    if (!code) { toast('请输入股票代码'); return; }
-    if (!/^\d{6}$/.test(code)) { toast('请输入6位数字代码'); return; }
-    const result = addStock(code);
+    const input = document.getElementById('newStockInput').value.trim();
+    if (!input) { toast('请输入股票名称或代码'); return; }
+
+    // 1. 尝试作为6位数字代码处理
+    if (/^\d{6}$/.test(input)) {
+        const result = addStock(input);
+        if (result.added) {
+            toast(`✅ 已添加 ${result.list[0].name}`);
+            document.getElementById('newStockInput').value = '';
+            refreshStocks();
+        } else {
+            toast(result.reason === 'duplicate' ? '该股票已在自选' : '添加失败，请检查代码');
+        }
+        return;
+    }
+
+    // 2. 作为名称处理：在默认股票和当前自选中查找包含关键词的股票
+    const allKnown = [...DEFAULT_STOCKS, ...loadStocks()];
+    // 去重（按code）
+    const uniqueMap = {};
+    allKnown.forEach(s => uniqueMap[s.code] = s);
+    const candidates = Object.values(uniqueMap).filter(s => s.name.includes(input));
+    if (candidates.length === 0) {
+        toast('未找到匹配的股票，请尝试输入6位代码');
+        return;
+    }
+    if (candidates.length > 1) {
+        // 若多个匹配，列出选项（简单起见，只取第一个）
+        toast(`找到多个匹配（${candidates.map(c=>c.name).join('、')}），请使用代码添加`);
+        return;
+    }
+    // 唯一匹配
+    const target = candidates[0];
+    const result = addStock(target.code);
     if (result.added) {
         toast(`✅ 已添加 ${result.list[0].name}`);
-        document.getElementById('newCode').value = '';
-        document.getElementById('newName').value = '';
+        document.getElementById('newStockInput').value = '';
         refreshStocks();
     } else {
-        toast(result.reason === 'duplicate' ? '该股票已在自选' : '代码格式有误');
+        toast(result.reason === 'duplicate' ? '该股票已在自选' : '添加失败');
     }
+});
+
+// 回车键触发添加
+document.getElementById('newStockInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('addBtn').click();
 });
 
 // ---------- 选项卡切换 ----------
@@ -597,19 +568,17 @@ document.querySelectorAll('.tab').forEach(tab => {
         document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
         tab.classList.add('active');
         document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
-        if (tab.dataset.tab === 'etf') {
-            loadETFData();
-        }
+        if (tab.dataset.tab === 'etf') loadETFData();
     });
 });
 
-// ---------- 原有的ETF数据（保留，字段修正） ----------
+// ---------- ETF数据（保留，已修正字段） ----------
 const MARKET = [
     {name:'上证指数', c:'000001', p:'1'}, {name:'深证成指', c:'399001', p:'0'},
     {name:'创业板指', c:'399006', p:'0'}, {name:'科创50', c:'000688', p:'1'},
     {name:'沪深300', c:'000300', p:'1'}, {name:'中证500', c:'000905', p:'1'},
 ];
-let mq = {}, eq = {}, eh = {}, ef = {};
+let mq = {}, eq = {};
 
 async function loadETFData() {
     try {
@@ -666,6 +635,10 @@ function renderETFGrid() {
             location.href = `stock.html?code=${e.code}`;
         });
     });
+}
+
+function allEtfs() {
+    try { return [...DEFAULT_ETFS, ...JSON.parse(localStorage.getItem('myEtfs')||'[]')]; } catch(e){ return DEFAULT_ETFS; }
 }
 
 // ---------- 定时器 ----------
