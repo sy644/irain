@@ -791,9 +791,7 @@
         // 数据加载
         // ============================================================
         async function refreshStocks() {
-            window._step('refreshStocks: start');
             const stocks = loadStocks();
-            window._step('refreshStocks: loadStocks -> ' + stocks.length + ' items');
             if (!stocks.length) {
                 document.getElementById('stockList').innerHTML = `
                         <div class="list-head">
@@ -866,16 +864,12 @@
                 }
             }
 
-            window._step('refreshStocks: about to renderStockCards, stocks=' + stocks.length);
             renderStockCards(stocks);
-            window._step('refreshStocks: renderStockCards done');
             updateTimeDisplay();
         }
 
         function renderStockCards(stocks) {
-            window._step('renderStockCards: called with ' + stocks.length);
             const list = document.getElementById('stockList');
-            window._step('renderStockCards: list element ' + (list ? 'found' : 'NOT FOUND'));
             if (!stocks.length) {
                 list.innerHTML = `
                         <div class="list-head">
@@ -1242,6 +1236,20 @@
         }, 1000);
 
         // ============================================================
+        // 初始化
+        // ============================================================
+        window.addEventListener('load', () => {
+            refreshStocks();
+            loadMarketData();
+            setInterval(refreshStocks, 60000);
+            setInterval(loadMarketData, 60000);
+            updateTimeDisplay();
+            setInterval(updateTimeDisplay, 1000);
+        });
+    })();
+    </script>
+</body>
+</html>=====================================
         // 初始化
         // ============================================================
         // 全局错误兜底：把任何报错渲染到 #stockList 顶部，方便排查
