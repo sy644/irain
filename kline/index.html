@@ -291,6 +291,70 @@
             cursor: pointer;
         }
 
+        /* ===== 智能选股按钮 & 结果 ===== */
+        .scan-area {
+            margin-bottom: 14px;
+        }
+        .scan-btn {
+            width: 100%;
+            padding: 10px;
+            background: #2b6cb0;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .scan-btn:hover {
+            background: #2c5282;
+        }
+        .scan-btn:active {
+            transform: scale(0.97);
+        }
+        .scan-result {
+            margin-top: 10px;
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            display: none;
+        }
+        .scan-result .result-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+        }
+        .scan-result .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border-soft);
+            font-size: 14px;
+        }
+        .scan-result .result-item:last-child {
+            border-bottom: none;
+        }
+        .scan-result .result-item .code {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+        .scan-result .result-item .change {
+            font-weight: 600;
+        }
+        .scan-result .result-item .change.up {
+            color: var(--up);
+        }
+        .scan-result .result-item .change.down {
+            color: var(--down);
+        }
+        .scan-result .empty-msg {
+            color: var(--text-muted);
+            text-align: center;
+            padding: 16px 0;
+        }
+
         /* ===== 自选股列表（4 列表格行） ===== */
         .stock-list {
             background: var(--bg-card);
@@ -580,6 +644,12 @@
             <button id="ocrBtn" class="btn-img" title="从图片识别股票代码">📷 识别</button>
             <input type="file" id="ocrFile" accept="image/*" style="display:none">
             <div class="hint">支持沪深北 · 代码/名称均可 · 📷 可识别持仓截图自动添加</div>
+        </div>
+
+        <!-- ===== 智能选股区域 ===== -->
+        <div class="scan-area">
+            <button class="scan-btn" id="scanBtn">🔍 智能选股（沪深300）</button>
+            <div class="scan-result" id="scanResult"></div>
         </div>
 
         <!-- ===== 自选股列表 ===== -->
@@ -1220,6 +1290,119 @@
             if (countdownSec <= 0) countdownSec = 60;
             updateCdown();
         }, 1000);
+
+        // ============================================================
+        // 🚀 智能选股（沪深300突破策略）
+        // ============================================================
+        // 内置约100只沪深300成分股（覆盖各行业龙头）
+        const STOCK_POOL = [
+            'sh600519', 'sz000858', 'sh600036', 'sz000333', 'sh601318', 'sz000002',
+            'sh600276', 'sz300750', 'sh601398', 'sz000651', 'sh600030', 'sz000001',
+            'sh601166', 'sz002415', 'sh600887', 'sz000568', 'sh601012', 'sz002594',
+            'sh600809', 'sz300059', 'sh601888', 'sz002475', 'sh600585', 'sz002304',
+            'sh600104', 'sz000963', 'sh600309', 'sz002230', 'sh601225', 'sz300124',
+            'sh601088', 'sz002142', 'sh600690', 'sz000338', 'sh601939', 'sz002027',
+            'sh600019', 'sz000625', 'sh601601', 'sz002024', 'sh600837', 'sz002241',
+            'sh601668', 'sz000538', 'sh600150', 'sz002460', 'sh601888', 'sz002129',
+            'sh600900', 'sz000725', 'sh601328', 'sz002714', 'sh600048', 'sz000100',
+            'sh601336', 'sz002352', 'sh600016', 'sz002236', 'sh601766', 'sz002271',
+            'sh600893', 'sz000157', 'sh601800', 'sz002050', 'sh600031', 'sz002202',
+            'sh601225', 'sz002236', 'sh600406', 'sz002129', 'sh601117', 'sz002340',
+            'sh600028', 'sz000069', 'sh601998', 'sz002001', 'sh600583', 'sz002008',
+            'sh601618', 'sz002024', 'sh600642', 'sz002183', 'sh601390', 'sz002032',
+            'sh600547', 'sz002049', 'sh601186', 'sz002080', 'sh600111', 'sz002179',
+            'sh601989', 'sz002223', 'sh600176', 'sz002294'
+        ];
+
+        async function scanStocks() {
+            const resultDiv = document.getElementById('scanResult');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `<div class="empty-msg">⏳ 正在扫描 ${STOCK_POOL.length} 只股票，请稍候…</div>`;
+
+            const candidates = [];
+            const concurrency = 5;
+
+            // 分批处理
+            for (let i = 0; i < STOCK_POOL.length; i += concurrency) {
+                const batch = STOCK_POOL.slice(i, i + concurrency);
+                const tasks = batch.map(async (code) => {
+                    try {
+                        const kline = await fetchKLine(code, 30);
+                        if (!kline || kline.length < 25) return null;
+                        const closes = kline.map(d => d.close);
+                        const highs = kline.map(d => d.high);
+                        const volumes = kline.map(d => d.volume);
+
+                        const today = kline[kline.length - 1];
+                        // 前20天（不包含今天）
+                        const prev20 = kline.slice(0, -1);
+                        if (prev20.length < 20) return null;
+                        const high20 = Math.max(...prev20.slice(-20).map(d => d.high));
+                        const avgVol20 = prev20.slice(-20).reduce((s, d) => s + d.volume, 0) / 20;
+                        const ma20 = closes.slice(-20).reduce((s, c) => s + c, 0) / 20;
+
+                        const cond1 = today.close > high20;
+                        const cond2 = today.volume > avgVol20 * 1.5;
+                        const cond3 = today.close > ma20;
+
+                        if (cond1 && cond2 && cond3) {
+                            // 获取实时报价
+                            const quotes = await fetchQuotesBatch([code]);
+                            const q = quotes[code];
+                            return {
+                                code: code,
+                                name: q ? q.name : code.toUpperCase(),
+                                price: q ? q.price : today.close,
+                                changePercent: q ? q.changePercent : 0,
+                                high20: high20,
+                                volumeRatio: today.volume / avgVol20,
+                            };
+                        }
+                        return null;
+                    } catch (e) {
+                        console.warn(`扫描 ${code} 失败`, e);
+                        return null;
+                    }
+                });
+                const results = await Promise.all(tasks);
+                candidates.push(...results.filter(r => r !== null));
+                // 更新进度
+                resultDiv.innerHTML = `<div class="empty-msg">⏳ 扫描中 ${Math.min(i + concurrency, STOCK_POOL.length)}/${STOCK_POOL.length} … 已发现 ${candidates.length} 只</div>`;
+            }
+
+            // 展示结果
+            if (candidates.length === 0) {
+                resultDiv.innerHTML = `<div class="empty-msg">✅ 当前无股票满足突破条件。</div>`;
+            } else {
+                let html = `<div class="result-title">🔥 发现 ${candidates.length} 只突破股：</div>`;
+                candidates.forEach(s => {
+                    const cls = s.changePercent > 0 ? 'up' : (s.changePercent < 0 ? 'down' : '');
+                    const sign = s.changePercent > 0 ? '+' : '';
+                    html += `
+                            <div class="result-item">
+                                <span><strong>${s.name}</strong> <span class="code">${s.code}</span></span>
+                                <span>
+                                    ${s.price.toFixed(2)} 
+                                    <span class="change ${cls}">${sign}${s.changePercent.toFixed(2)}%</span>
+                                    <span style="color:var(--text-muted);font-size:12px;margin-left:6px;">放量 ${s.volumeRatio.toFixed(1)}x</span>
+                                </span>
+                            </div>
+                        `;
+                });
+                html += `<div style="margin-top:8px;font-size:12px;color:var(--text-muted);text-align:center;">点击个股代码可查看详情（需stock.html）</div>`;
+                resultDiv.innerHTML = html;
+                // 给每个结果项添加点击跳转（可选）
+                resultDiv.querySelectorAll('.result-item').forEach((item, idx) => {
+                    const code = candidates[idx].code;
+                    item.style.cursor = 'pointer';
+                    item.addEventListener('click', () => {
+                        location.href = `stock.html?code=${encodeURIComponent(code)}`;
+                    });
+                });
+            }
+        }
+
+        document.getElementById('scanBtn').addEventListener('click', scanStocks);
 
         // ============================================================
         // 初始化
