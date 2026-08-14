@@ -151,6 +151,7 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            max-width: 100%;
         }
         .stock-card .footer {
             display: flex;
@@ -177,7 +178,7 @@
         .dot.stale { background: #f59e0b; }
         .dot.old { background: #f23645; }
 
-        /* 原有的指数条和ETF网格（保留作为可选） */
+        /* 原有的指数条和ETF网格（保留） */
         .index-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 14px; }
         .index-item {
             flex-shrink: 0; background: #14142a; border-radius: 10px; padding: 10px 14px; min-width: 115px;
@@ -267,7 +268,6 @@
     </div>
 </div>
 
-<!-- 选项卡（保留原有ETF/行业，可切换） -->
 <div class="tabs">
     <div class="tab active" data-tab="main">📈 自选股</div>
     <div class="tab" data-tab="etf">📊 宽基ETF</div>
@@ -284,11 +284,10 @@
     </div>
 </div>
 
-<!-- 宽基ETF面板（保留原有） -->
+<!-- 宽基ETF面板（保留） -->
 <div class="panel" id="panel-etf">
     <div class="index-strip" id="indexStrip"></div>
     <div class="etf-grid" id="etfGrid"></div>
-    <!-- 简洁显示，无K线 -->
 </div>
 
 <div class="footer">点击自选股查看详细分析 · 60秒自动刷新</div>
@@ -333,7 +332,7 @@ async function fj(u) {
     return r.json();
 }
 
-// 批量获取报价（支持自选股和ETF）
+// ========== 修正：腾讯qt字段索引 ==========
 async function fetchQuotesBatch(codes) {
     if (!codes || codes.length === 0) return {};
     const BATCH_SIZE = 50;
@@ -354,13 +353,15 @@ async function fetchQuotesBatch(codes) {
                 if (!match) continue;
                 const code = match[1];
                 const fields = match[2].split('~');
+                // 字段索引（腾讯qt标准）：
+                // 0=市场编号, 1=名称, 2=当前价, 3=涨跌幅(%), 4=涨跌额, 5=成交量(手), 6=成交额(元)
                 results[code] = {
-                    name: fields[0] || code,
-                    price: parseFloat(fields[1]) || 0,
-                    changePercent: parseFloat(fields[2]) || 0,
-                    change: parseFloat(fields[3]) || 0,
-                    volume: parseInt(fields[4]) || 0,
-                    turnover: parseFloat(fields[5]) || 0,
+                    name: fields[1] || code,
+                    price: parseFloat(fields[2]) || 0,
+                    changePercent: parseFloat(fields[3]) || 0,
+                    change: parseFloat(fields[4]) || 0,
+                    volume: parseInt(fields[5]) || 0,
+                    turnover: parseFloat(fields[6]) || 0,
                 };
             }
         } catch (e) {
@@ -431,8 +432,6 @@ async function refreshStocks() {
     //   每个股票独立计算，不阻塞渲染
     for (const s of stocks) {
         const code = s.code;
-        // 跳过已计算且缓存时间 < 10分钟的（可选）
-        // 这里简单起见，只要有K线就重新计算
         try {
             const kline = await getKLine(code, 120);
             if (kline && kline.length > 60) {
@@ -499,8 +498,13 @@ function renderStockCards(stocks, filterText = '') {
         const updateTime = data.updateTime ? formatTime(data.updateTime) : '--';
         const isFresh = data.updateTime && (Date.now() - data.updateTime < 5 * 60 * 1000); // 5分钟内
 
+        // 格式化价格和涨跌
+        const priceDisplay = typeof price === 'number' ? price.toFixed(2) : price;
+        const changeDisplay = typeof change === 'number' ? change.toFixed(2) : '0.00';
+        const changePctDisplay = typeof changePercent === 'number' ? changePercent.toFixed(2) : '0.00';
         const changeClass = change >= 0 ? 'up' : 'down';
         const sign = change >= 0 ? '+' : '';
+
         const volText = volume >= 1e4 ? (volume/1e4).toFixed(0) + '万' : volume.toFixed(0);
 
         // 信号徽章样式
@@ -513,6 +517,9 @@ function renderStockCards(stocks, filterText = '') {
 
         const dotClass = isFresh ? 'fresh' : (data.updateTime ? 'stale' : 'old');
 
+        // 截断过长的action（如带小数的数值）
+        const actionDisplay = action.length > 30 ? action.slice(0, 28) + '…' : action;
+
         html += `
             <div class="stock-card" data-code="${s.code}">
                 <div class="top">
@@ -520,12 +527,12 @@ function renderStockCards(stocks, filterText = '') {
                     <span class="code">${s.code.toUpperCase()}</span>
                 </div>
                 <div class="price-row">
-                    <span class="price">${typeof price === 'number' ? price.toFixed(2) : price}</span>
-                    <span class="chg ${changeClass}">${sign}${change.toFixed(2)} (${sign}${changePercent.toFixed(2)}%)</span>
+                    <span class="price">${priceDisplay}</span>
+                    <span class="chg ${changeClass}">${sign}${changeDisplay} (${sign}${changePctDisplay}%)</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                     <span class="signal-badge ${badgeClass}">${badgeText}</span>
-                    ${action ? `<span class="action-text">${action}</span>` : ''}
+                    ${actionDisplay ? `<span class="action-text">${actionDisplay}</span>` : ''}
                 </div>
                 <div class="footer">
                     <span class="update-time">
@@ -572,13 +579,11 @@ document.getElementById('addBtn').addEventListener('click', () => {
     const name = document.getElementById('newName').value.trim();
     if (!code) { toast('请输入股票代码'); return; }
     if (!/^\d{6}$/.test(code)) { toast('请输入6位数字代码'); return; }
-    // 调用 app.js 的 addStock
     const result = addStock(code);
     if (result.added) {
         toast(`✅ 已添加 ${result.list[0].name}`);
         document.getElementById('newCode').value = '';
         document.getElementById('newName').value = '';
-        // 刷新列表
         refreshStocks();
     } else {
         toast(result.reason === 'duplicate' ? '该股票已在自选' : '代码格式有误');
@@ -592,14 +597,13 @@ document.querySelectorAll('.tab').forEach(tab => {
         document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
         tab.classList.add('active');
         document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
-        // 如果是ETF面板，加载ETF数据（原有逻辑）
         if (tab.dataset.tab === 'etf') {
             loadETFData();
         }
     });
 });
 
-// ---------- 原有的ETF数据（精简版，保留原有逻辑但简化） ----------
+// ---------- 原有的ETF数据（保留，字段修正） ----------
 const MARKET = [
     {name:'上证指数', c:'000001', p:'1'}, {name:'深证成指', c:'399001', p:'0'},
     {name:'创业板指', c:'399006', p:'0'}, {name:'科创50', c:'000688', p:'1'},
@@ -609,9 +613,12 @@ let mq = {}, eq = {}, eh = {}, ef = {};
 
 async function loadETFData() {
     try {
-        // 简化：只显示指数和ETF报价，无K线
-        const mq_ = await fetchQuotesBatch(MARKET.map(i => i.p + '.' + i.c).map(x => x.replace(/^[0-9]+\./, ''))); // 实际需调整
-        const eq_ = await fetchQuotesBatch(allEtfs().map(e => e.code));
+        const marketCodes = MARKET.map(i => (i.p === '1' ? 'sh' : 'sz') + i.c);
+        const etfCodes = allEtfs().map(e => e.code);
+        const [mq_, eq_] = await Promise.all([
+            fetchQuotesBatch(marketCodes),
+            fetchQuotesBatch(etfCodes)
+        ]);
         mq = mq_; eq = eq_;
         renderIndexStrip();
         renderETFGrid();
@@ -622,10 +629,11 @@ function renderIndexStrip() {
     const s = document.getElementById('indexStrip');
     s.innerHTML = '';
     MARKET.forEach(i => {
-        const d = mq[i.c];
+        const code = (i.p === '1' ? 'sh' : 'sz') + i.c;
+        const d = mq[code];
         const div = document.createElement('div');
         div.className = 'index-item';
-        if (d && d.price != null) {
+        if (d && d.price) {
             const cls = d.changePercent >= 0 ? 'up' : 'down';
             div.innerHTML = `<div class="i-name">${i.name}</div><div class="i-price">${d.price.toFixed(2)}</div><div class="i-chg ${cls}">${d.changePercent>=0?'▲':'▼'} ${d.changePercent.toFixed(2)}%</div>`;
         } else {
@@ -655,7 +663,6 @@ function renderETFGrid() {
         card.innerHTML = html;
         g.appendChild(card);
         card.addEventListener('click', () => {
-            // 跳转到stock.html（ETF也支持）
             location.href = `stock.html?code=${e.code}`;
         });
     });
@@ -673,11 +680,8 @@ setInterval(() => {
 
 // ---------- 初始化 ----------
 window.addEventListener('load', () => {
-    // 从 localStorage 加载自选股
     refreshStocks();
-    // 首次加载ETF面板（默认不显示，但可以预加载）
     loadETFData();
-    // 定时刷新（60秒）
     setInterval(refreshStocks, 60000);
     updateTimeDisplay();
 });
