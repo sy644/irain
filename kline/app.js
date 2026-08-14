@@ -69,13 +69,14 @@ function removeStock(code) {
 // 缓存工具（离线优先：K线24h / 报价 5min / 基本面 1h）
 // ============================================
 const CACHE_TTL = {
-  kline:   24 * 60 * 60 * 1000,   // K线：24小时（盘后更新一次即可）
-  quote:    5 * 60 * 1000,        // 实时报价：5分钟（盘中变化快）
+  kline:   24 * 60 * 60 * 1000,   // K线：24小时
+  quote:    5 * 60 * 1000,        // 实时报价：5分钟
   basic:   60 * 60 * 1000,        // 基本面：1小时
   signal:  10 * 60 * 1000,        // 信号计算结果：10分钟
 };
-const CACHE_EXPIRE = CACHE_TTL.kline;  // 兼容旧代码
+const CACHE_EXPIRE = CACHE_TTL.kline;
 const QUOTE_KEY = (code) => `quote_${code}`;
+
 function getCache(key) {
   try {
     const raw = localStorage.getItem(key);
@@ -93,34 +94,9 @@ function getCacheWithTTL(key, ttlMs) {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const item = JSON.parse(raw);
-    if (Date.now() - item.timestamp > ttlMs) return null;  // 过期但保留
+    if (Date.now() - item.timestamp > ttlMs) return null;
     return item.data;
   } catch { return null; }
-}
-function setCache(key, data) {
-  try {
-    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
-  } catch (e) {
-    // localStorage 满了 → 清掉旧的
-    if (e.name === 'QuotaExceededError') {
-      clearOldCache();
-      try { localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() })); } catch {}
-    }
-  }
-}
-function clearOldCache() {
-  const keys = Object.keys(localStorage);
-  const now = Date.now();
-  keys.forEach(k => {
-    if (k.startsWith('kline_') || k.startsWith('basic_') || k.startsWith('quote_') || k.startsWith('signal_')) {
-      try {
-        const item = JSON.parse(localStorage.getItem(k));
-        if (now - item.timestamp > 7 * 24 * 60 * 60 * 1000) {  // 7天前的删掉
-          localStorage.removeItem(k);
-        }
-      } catch { localStorage.removeItem(k); }
-    }
-  });
 }
 function getCacheAge(key) {
   try {
@@ -130,23 +106,140 @@ function getCacheAge(key) {
   } catch { return null; }
 }
 
+// ---- LRU 缓存清理（新增） ----
+function lruCacheClean(maxItems = 200) {
+  const keys = Object.keys(localStorage);
+  const cacheItems = keys
+    .filter(k => k.startsWith('kline_') || k.startsWith('basic_') || k.startsWith('quote_') || k.startsWith('signal_'))
+    .map(k => {
+      try {
+        const raw = localStorage.getItem(k);
+        const item = JSON.parse(raw);
+        return { key: k, timestamp: item.timestamp || 0 };
+      } catch {
+        return { key: k, timestamp: 0 };
+      }
+    })
+    .sort((a, b) => b.timestamp - a.timestamp);
+  if (cacheItems.length > maxItems) {
+    const toRemove = cacheItems.slice(maxItems);
+    toRemove.forEach(({ key }) => localStorage.removeItem(key));
+  }
+}
+
+function setCache(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+  } catch (e) {
+    if (e.name === 'QuotaExceededError') {
+      lruCacheClean(150);
+      try {
+        localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+      } catch (e2) {
+        console.warn('缓存写入失败', e2);
+      }
+    }
+  }
+}
+
+function clearOldCache() {
+  const keys = Object.keys(localStorage);
+  const now = Date.now();
+  keys.forEach(k => {
+    if (k.startsWith('kline_') || k.startsWith('basic_') || k.startsWith('quote_') || k.startsWith('signal_')) {
+      try {
+        const item = JSON.parse(localStorage.getItem(k));
+        if (now - item.timestamp > 7 * 24 * 60 * 60 * 1000) {
+          localStorage.removeItem(k);
+        }
+      } catch { localStorage.removeItem(k); }
+    }
+  });
+}
+
+// ---- 缓存统计（新增） ----
+function getCacheStats() {
+  const keys = Object.keys(localStorage);
+  let totalSize = 0, count = 0;
+  const types = { kline: 0, basic: 0, quote: 0, signal: 0 };
+  keys.forEach(k => {
+    if (k.startsWith('kline_')) types.kline++;
+    else if (k.startsWith('basic_')) types.basic++;
+    else if (k.startsWith('quote_')) types.quote++;
+    else if (k.startsWith('signal_')) types.signal++;
+    try {
+      totalSize += localStorage.getItem(k).length * 2;
+      count++;
+    } catch {}
+  });
+  return { totalItems: count, totalSizeKB: Math.round(totalSize / 1024), ...types };
+}
+
 // ============================================
-// 数据抓取（离线优先：先网络 → 失败用旧缓存）
+// 数据抓取（优化：并发控制 + 重试 + 批量报价）
 // ============================================
+// ---- 并发限制器 ----
+function createConcurrencyLimiter(limit = 5) {
+  const queue = [];
+  let active = 0;
+  const next = () => {
+    if (queue.length === 0 || active >= limit) return;
+    active++;
+    const { fn, resolve, reject } = queue.shift();
+    fn()
+      .then(resolve)
+      .catch(reject)
+      .finally(() => {
+        active--;
+        next();
+      });
+  };
+  return (fn) => {
+    return new Promise((resolve, reject) => {
+      queue.push({ fn, resolve, reject });
+      next();
+    });
+  };
+}
+const defaultLimiter = createConcurrencyLimiter(5);
+
+// ---- 带重试的 fetch ----
+async function fetchWithRetry(url, options = {}, retries = 3, baseDelay = 300) {
+  let lastError;
+  for (let i = 0; i < retries; i++) {
+    const timeout = 8000 + i * 2000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err;
+      if (err.name === 'AbortError') {
+        console.warn(`请求超时 (尝试 ${i+1}/${retries})，${baseDelay * (i+1)}ms 后重试...`);
+      } else {
+        console.warn(`请求失败 (尝试 ${i+1}/${retries})：${err.message}`);
+      }
+      if (i < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, baseDelay * (i + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
+
+// ---- 增强 fetchKLine ----
 async function fetchKLine(code, count = 120) {
   const cacheKey = `kline_${code}_${count}`;
-  // 1. 优先用新缓存
   const fresh = getCacheWithTTL(cacheKey, CACHE_TTL.kline);
   if (fresh) return fresh;
-  // 2. 尝试网络
+
   const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${encodeURIComponent(code)},day,,,${count},qfq`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
+    const data = await fetchWithRetry(url, {}, 3);
     if (data.code !== 0) throw new Error('API error: ' + data.msg);
     const key = Object.keys(data.data)[0];
     const arr = (data.data[key] && (data.data[key].qfqday || data.data[key].day)) || [];
@@ -162,33 +255,25 @@ async function fetchKLine(code, count = 120) {
     setCache(cacheKey, result);
     return result;
   } catch (err) {
-    clearTimeout(timeout);
-    // 3. 网络失败 → 降级到任何时间的旧缓存（离线模式）
     const stale = getCache(cacheKey);
     if (stale) {
       console.warn(`[离线模式] ${code} 使用 ${Math.round((Date.now() - getCacheAge(cacheKey))/1000/60)} 分钟前的旧数据`);
       return stale;
     }
-    if (err.name === 'AbortError') throw new Error('请求超时，无缓存可用');
     throw err;
   }
 }
 
+// ---- 增强 fetchBasic ----
 async function fetchBasic(code) {
   const cacheKey = `basic_${code}`;
-  // 1. 优先新缓存
   const fresh = getCacheWithTTL(cacheKey, CACHE_TTL.basic);
   if (fresh) return fresh;
-  // 2. 尝试网络
+
   const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${encodeURIComponent(code)},day,,,1,qfq`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6000);
   try {
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!res.ok) throw new Error('HTTP');
-    const data = await res.json();
-    if (data.code !== 0) throw new Error('API');
+    const data = await fetchWithRetry(url, {}, 3);
+    if (data.code !== 0) throw new Error('API error');
     const key = Object.keys(data.data)[0];
     const node = data.data[key];
     const qt = (node && node.qt && node.qt[key]) || [];
@@ -212,9 +297,7 @@ async function fetchBasic(code) {
     };
     setCache(cacheKey, result);
     return result;
-  } catch (e) {
-    clearTimeout(timeout);
-    // 3. 离线降级
+  } catch (err) {
     const stale = getCache(cacheKey);
     if (stale) {
       console.warn(`[离线模式] ${code} 基本面使用旧数据`);
@@ -224,34 +307,90 @@ async function fetchBasic(code) {
   }
 }
 
-// ============================================
-// 批量预拉取：给自选股列表一次拉完所有数据
-// ============================================
-async function prefetchAll(stocks) {
-  if (!stocks || !stocks.length) return { success: 0, fail: 0, skipped: 0 };
-  let success = 0, fail = 0, skipped = 0;
-  const tasks = stocks.map(async (s) => {
-    const code = s.code;
-    // 跳过近 1h 已更新的基本面
-    const basicAge = getCacheAge(`basic_${code}`);
-    if (basicAge !== null && basicAge < CACHE_TTL.basic) {
-      skipped++;
-      return;
-    }
+// ---- 批量实时报价（新增） ----
+async function fetchQuotesBatch(codes) {
+  if (!codes || codes.length === 0) return {};
+  const BATCH_SIZE = 50;
+  const batches = [];
+  for (let i = 0; i < codes.length; i += BATCH_SIZE) {
+    batches.push(codes.slice(i, i + BATCH_SIZE));
+  }
+  const results = {};
+  await Promise.all(batches.map(async (batch) => {
+    const codeStr = batch.join(',');
+    const url = `https://qt.gtimg.cn/q=${codeStr}`;
     try {
-      await fetchBasic(code);
-      success++;
+      const text = await fetchWithRetry(url, {}, 2, 200);
+      const lines = text.split('\n').filter(line => line.trim());
+      for (const line of lines) {
+        const match = line.match(/v_([a-z]{2}\d{6})="(.+)"/);
+        if (!match) continue;
+        const code = match[1];
+        const fields = match[2].split('~');
+        results[code] = {
+          name: fields[0] || code,
+          price: parseFloat(fields[1]) || 0,
+          changePercent: parseFloat(fields[2]) || 0,
+          change: parseFloat(fields[3]) || 0,
+          volume: parseInt(fields[4]) || 0,
+          turnover: parseFloat(fields[5]) || 0,
+        };
+      }
     } catch (e) {
-      fail++;
-      console.warn(`[预拉取] ${code} 失败:`, e.message);
+      console.warn(`批量报价请求失败: ${codeStr}`, e.message);
     }
-  });
+  }));
+  return results;
+}
+
+// ---- 改进的预拉取（支持并发、可选拉取项） ----
+async function prefetchAll(stocks, options = {}) {
+  const {
+    fetchKline = true,
+    fetchBasic = true,
+    klineCount = 120,
+    concurrency = 5,
+  } = options;
+
+  if (!stocks || !stocks.length) return { success: 0, fail: 0, skipped: 0 };
+
+  let success = 0, fail = 0, skipped = 0;
+  const tasks = [];
+  const limiter = createConcurrencyLimiter(concurrency);
+
+  for (const s of stocks) {
+    const code = s.code;
+    const klineAge = getCacheAge(`kline_${code}_${klineCount}`);
+    const basicAge = getCacheAge(`basic_${code}`);
+
+    const needKline = fetchKline && (klineAge === null || klineAge > CACHE_TTL.kline);
+    const needBasic = fetchBasic && (basicAge === null || basicAge > CACHE_TTL.basic);
+
+    if (!needKline && !needBasic) {
+      skipped++;
+      continue;
+    }
+
+    const task = () => (async () => {
+      try {
+        if (needKline) await fetchKLine(code, klineCount);
+        if (needBasic) await fetchBasic(code);
+        success++;
+      } catch (e) {
+        fail++;
+        console.warn(`[预拉取] ${code} 失败:`, e.message);
+      }
+    })();
+
+    tasks.push(limiter(task));
+  }
+
   await Promise.allSettled(tasks);
   return { success, fail, skipped, total: stocks.length };
 }
 
 // ============================================
-// 技术指标
+// 技术指标（不变）
 // ============================================
 function calcMA(closes, n) {
   const out = new Array(closes.length).fill(null);
@@ -486,14 +625,13 @@ function calcADX(highs, lows, closes, n = 14) {
     const sum = pDI + nDI;
     dx[i] = sum === 0 ? 0 : 100 * Math.abs(pDI - nDI) / sum;
   }
-  // 【修复】累加时只统计有效值，且必须达到 n 个才能求平均
   let s = 0, cnt = 0;
   for (let i = n; i < closes.length && cnt < n; i++) {
     if (dx[i] != null) { s += dx[i]; cnt++; }
   }
   if (cnt === 0) return out;
   let prev = s / cnt;
-  out[n * 2 - 1] = prev;  // 标记首个有效 ADX 位置
+  out[n * 2 - 1] = prev;
   for (let i = n * 2; i < closes.length; i++) {
     prev = (prev * (n - 1) + (dx[i] || prev)) / n;
     out[i] = prev;
@@ -639,9 +777,6 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
   const isFangLiang = todayVol > avgVol5 * 1.5;
   const isSuoLiang = todayVol < avgVol5 * 0.7;
   const yestClose = closes[last - 1] || closes[last];
-  // 【修复】跌破判定扩展：
-  //   1) 原始：昨日在均线上、今天跌破（首日跌破）
-  //   2) 新增：连续在均线下方 + 放量 = 弱势确认（之前漏判）
   const belowMA20Now = closes[last] < ma20[last];
   const belowMA60Now = closes[last] < ma60[last];
   const justBelowMA20 = yestClose >= ma20[last - 1] && closes[last] < ma20[last];
@@ -650,22 +785,18 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
   const aboveMA20Now = closes[last] > ma20[last];
   let vpEvent = 'normal';
   let vpLabel = '正常量价';
-  // 放量破位：放量 + (跌破均线 或 持续在均线下)
   if (isFangLiang && (justBelowMA20 || justBelowMA60 || (belowMA20Now && belowMA60Now))) {
     vpEvent = 'fangBreak';
     vpLabel = justBelowMA20 || justBelowMA60 ? '放量跌破均线' : '放量弱势确认';
   }
-  // 缩量破位：缩量 + OBV 下行 + 在均线下（动能衰竭型破位）
   else if (isSuoLiang && (justBelowMA20 || justBelowMA60) && obvInfo.direction === 'down') {
     vpEvent = 'suoBreak';
     vpLabel = '缩量跌破均线';
   }
-  // 放量突破：放量 + 站上双均线 + OBV 上行
   else if (isFangLiang && aboveMA60Now && aboveMA20Now && obvInfo.direction === 'up') {
     vpEvent = 'fangBreakout';
     vpLabel = '放量突破上涨';
   }
-  // 缩量上涨：缩量 + 站上 MA60 + OBV 上行
   else if (isSuoLiang && aboveMA60Now && obvInfo.direction === 'up') {
     vpEvent = 'upTrend';
     vpLabel = '缩量上涨(主力锁仓?)';
@@ -702,7 +833,6 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
   else if (scoreRatio > 0.2 && trendScore >= 0) { overall = '买入'; action = '建仓'; position = 50; }
   else if (scoreRatio > 0.2 && trendScore === -1) { overall = '左侧试探'; action = '极轻仓尝试'; position = 20; }
   else if (scoreRatio > 0.2 && trendScore === -2) { overall = '左侧试探'; action = '等待企稳'; position = 10; }
-  // 【修复】去掉重复赋值
   else if (scoreRatio < -0.5 && trendScore <= -1) { overall = '强力卖出'; action = '清仓离场'; position = 0; }
   else if (scoreRatio < -0.2 && trendScore <= 0) { overall = '卖出'; action = '减仓'; position = 20; }
   else if (scoreRatio < -0.2 && trendScore >= 1) { overall = '高空防守'; action = '减仓防守'; position = 30; }
@@ -739,10 +869,6 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
       action += ' · ⚠ 量价背离,价格涨但资金流出';
     }
   }
-  // 【优化】confidence 多因子融合：scoreRatio + vpScore + trendScore + backtest
-  // 解决"信号冲突时仍给 100% 信心"的问题
-  // 注意：backtest 必须先计算
-  // 【修复】回测里不能再调用 summarize 自己（递归），用轻量级回测
   const backtest = quickBacktest(closes, highs, lows, opens, volumes);
   if (backtest.buySamples >= 20) {
     const wr = backtest.buyWinRate;
@@ -750,16 +876,14 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     else if (wr < 0.50) position = Math.round(position * 0.75);
     else if (wr > 0.60) position = Math.min(100, Math.round(position * 1.1));
   }
-  // 【多因子置信度】
-  const confScore = Math.abs(scoreRatio) * 70;                           // 加权分贡献 70%
-  const confVp    = Math.min(Math.abs(vpScore) / 2, 1) * 15;             // 量价事件 ±15%
-  const confTrend = Math.min(Math.abs(trendScore) / 2, 1) * 10;          // 趋势 ±10%
+  const confScore = Math.abs(scoreRatio) * 70;
+  const confVp    = Math.min(Math.abs(vpScore) / 2, 1) * 15;
+  const confTrend = Math.min(Math.abs(trendScore) / 2, 1) * 10;
   let confBack = 0;
   if (backtest.buySamples >= 20) {
     const wr = backtest.buyWinRate;
-    confBack = wr > 0.55 ? 5 : wr < 0.45 ? -10 : 0;                     // 历史胜率 ±10%
+    confBack = wr > 0.55 ? 5 : wr < 0.45 ? -10 : 0;
   }
-  // 信号一致性扣分：买/卖分数差距小 = 信号矛盾
   const signalConsistency = (buyScore + sellScore > 0)
     ? Math.max(buyScore, sellScore) / (buyScore + sellScore)
     : 0.5;
@@ -784,7 +908,7 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
 
   return {
     overall, action, position, confidence,
-    price: closes[last],                          // 当前价（供风控层使用）
+    price: closes[last],
     buyScore: +buyScore.toFixed(2), sellScore: +sellScore.toFixed(2),
     netScore: +netScore.toFixed(2), scoreRatio: +scoreRatio.toFixed(3),
     buy: Math.round(buyScore), sell: Math.round(sellScore),
@@ -806,7 +930,7 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
 }
 
 // ============================================
-// 历史胜率回测（使用真实策略 summarize）
+// 历史胜率回测（不变）
 // ============================================
 function backtestSignal(closes, highs, lows, opens, volumes, lookback = 100, holdDays = 5) {
   const N = closes.length;
@@ -815,32 +939,26 @@ function backtestSignal(closes, highs, lows, opens, volumes, lookback = 100, hol
   }
   let buySamples = 0, buyWins = 0, buySum = 0;
   let sellSamples = 0, sellWins = 0, sellSum = 0;
-  // 各 overall 统计（新增）
   const overallStats = {};
   const start = N - lookback;
   for (let i = start; i < N - holdDays; i++) {
-    // 切片：到第 i 天为止的历史 K 线
     const subClose = closes.slice(0, i + 1);
     const subHigh  = highs.slice(0, i + 1);
     const subLow   = lows.slice(0, i + 1);
     const subOpen  = opens.slice(0, i + 1);
     const subVol   = volumes.slice(0, i + 1);
-    if (subClose.length < 60) continue;        // 不足 60 天不算
-    // 用真实策略的枢轴点（前一天的数据）—— 与现网保持一致
+    if (subClose.length < 60) continue;
     const prev = subClose[subClose.length - 2] || subClose[subClose.length - 1];
     const prevHigh = subHigh[subHigh.length - 2] || subHigh[subHigh.length - 1];
     const prevLow  = subLow[subLow.length - 2]  || subLow[subLow.length - 1];
     const pivots = calcPivots(prevHigh, prevLow, prev);
-    // 【核心修复】用 summarize（真实策略）而不是 quickSignal（简化版）
     const sig = summarize(subClose, subHigh, subLow, subOpen, subVol, pivots);
     const futureRet = (closes[i + holdDays] - closes[i]) / closes[i];
-    // 记录每种判定的胜率
     const overall = sig.overall;
     if (!overallStats[overall]) overallStats[overall] = { count: 0, wins: 0, sum: 0 };
     overallStats[overall].count++;
     overallStats[overall].sum += futureRet;
     if (futureRet > 0) overallStats[overall].wins++;
-    // 仅统计买入/卖出两类
     if (['买入', '强力买入', '左侧试探'].includes(overall)) {
       buySamples++;
       buySum += futureRet;
@@ -853,7 +971,6 @@ function backtestSignal(closes, highs, lows, opens, volumes, lookback = 100, hol
   }
   const buyWinRate = buySamples ? buyWins / buySamples : 0;
   const buyAvgRet  = buySamples ? buySum / buySamples : 0;
-  // 计算每种判定的胜率（用于诊断）
   const breakdown = Object.entries(overallStats).map(([k, v]) => ({
     overall: k,
     count: v.count,
@@ -865,14 +982,12 @@ function backtestSignal(closes, highs, lows, opens, volumes, lookback = 100, hol
     buySamples, buyWins, buyWinRate, buyAvgRet,
     sellSamples, sellWins,
     lookback, holdDays,
-    breakdown,                    // 新增：按 overall 分组统计
-    // 兼容旧字段
+    breakdown,
     winRate: buyWinRate,
     avgReturn: buyAvgRet,
   };
 }
 
-// 轻量级回测（避免递归调用 summarize）—— 用于 confidence 计算
 function quickBacktest(closes, highs, lows, opens, volumes, lookback = 60, holdDays = 5) {
   const N = closes.length;
   if (N < lookback + holdDays) {
@@ -969,10 +1084,8 @@ function goStock(code) {
 }
 
 // ============================================
-// 量化指标：Sharpe / MaxDD / Calmar / 盈亏比
+// 量化指标（不变）
 // ============================================
-
-// 1. 每日收益率序列
 function dailyReturns(closes) {
   const r = [];
   for (let i = 1; i < closes.length; i++) {
@@ -981,7 +1094,6 @@ function dailyReturns(closes) {
   return r;
 }
 
-// 2. 年化波动率
 function volatility(returns, periodsPerYear = 252) {
   if (returns.length < 2) return 0;
   const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
@@ -989,7 +1101,6 @@ function volatility(returns, periodsPerYear = 252) {
   return Math.sqrt(variance) * Math.sqrt(periodsPerYear);
 }
 
-// 3. 年化收益
 function annualReturn(returns, periodsPerYear = 252) {
   if (!returns.length) return 0;
   const totalRet = returns.reduce((acc, r) => acc * (1 + r), 1) - 1;
@@ -998,7 +1109,6 @@ function annualReturn(returns, periodsPerYear = 252) {
   return Math.pow(1 + totalRet, 1 / years) - 1;
 }
 
-// 4. 夏普比率（假设无风险利率 2.5%）
 function sharpeRatio(returns, riskFree = 0.025, periodsPerYear = 252) {
   const annRet = annualReturn(returns, periodsPerYear);
   const vol = volatility(returns, periodsPerYear);
@@ -1006,7 +1116,6 @@ function sharpeRatio(returns, riskFree = 0.025, periodsPerYear = 252) {
   return (annRet - riskFree) / vol;
 }
 
-// 5. 最大回撤
 function maxDrawdown(closes) {
   if (closes.length < 2) return { value: 0, peak: 0, trough: 0, peakIdx: 0, troughIdx: 0 };
   let peak = closes[0], peakIdx = 0, maxDD = 0, ddPeak = 0, ddTrough = 0, ddPeakIdx = 0, ddTroughIdx = 0;
@@ -1028,11 +1137,10 @@ function maxDrawdown(closes) {
     value: maxDD,
     peak: ddPeak, trough: ddTrough,
     peakIdx: ddPeakIdx, troughIdx: ddTroughIdx,
-    recoveryDays: closes.length - 1 - ddTroughIdx,  // 距高点还没回本的"当前回撤天数"
+    recoveryDays: closes.length - 1 - ddTroughIdx,
   };
 }
 
-// 6. 卡玛比率（年化收益 / 最大回撤）
 function calmarRatio(returns, closes, periodsPerYear = 252) {
   const ar = annualReturn(returns, periodsPerYear);
   const mdd = maxDrawdown(closes).value;
@@ -1040,7 +1148,6 @@ function calmarRatio(returns, closes, periodsPerYear = 252) {
   return ar / mdd;
 }
 
-// 7. 胜率 + 盈亏比（用于回测）
 function winRateAndPayoff(returns) {
   if (!returns.length) return { winRate: 0, payoff: 0, profitFactor: 0, expectancy: 0 };
   const wins = returns.filter(r => r > 0);
@@ -1063,9 +1170,7 @@ function winRateAndPayoff(returns) {
   };
 }
 
-// 8. 综合回测：含 Sharpe / MaxDD / 盈亏比
 function advancedBacktest(closes, signals, holdDays = 5) {
-  // signals: 数组，每项是 { i, sig: 'buy'/'sell'/'neutral' }
   if (!closes.length || !signals.length) {
     return { error: '数据不足' };
   }
@@ -1097,7 +1202,6 @@ function advancedBacktest(closes, signals, holdDays = 5) {
   };
 }
 
-// 9. 多周期共振：日线 + 60 分钟线 趋势确认
 function multiTimeframeConfirm(dailyCloses, hourlyCloses) {
   if (!dailyCloses || !hourlyCloses) return { confirmed: false, note: '数据不足' };
   if (dailyCloses.length < 60 || hourlyCloses.length < 60) return { confirmed: false, note: '数据不足' };
@@ -1114,11 +1218,9 @@ function multiTimeframeConfirm(dailyCloses, hourlyCloses) {
   };
 }
 
-// 10. 索提诺比率（Sortino Ratio）：只看下行波动，更准
 function sortinoRatio(returns, riskFree = 0.025, periodsPerYear = 252) {
   if (returns.length < 2) return 0;
   const annRet = annualReturn(returns, periodsPerYear);
-  // 只算负收益的下行偏差
   const negReturns = returns.filter(r => r < 0);
   if (negReturns.length === 0) return annRet > riskFree ? 99 : 0;
   const downside = Math.sqrt(negReturns.reduce((s, r) => s + r * r, 0) / returns.length) * Math.sqrt(periodsPerYear);
@@ -1126,7 +1228,6 @@ function sortinoRatio(returns, riskFree = 0.025, periodsPerYear = 252) {
   return (annRet - riskFree) / downside;
 }
 
-// 11. 大盘相关性 β（Beta）：跟沪深300 的联动性
 function betaToMarket(stockReturns, marketReturns) {
   if (stockReturns.length !== marketReturns.length || stockReturns.length < 10) return 0;
   const n = stockReturns.length;
@@ -1141,7 +1242,6 @@ function betaToMarket(stockReturns, marketReturns) {
   return cov / varM;
 }
 
-// 12. 大盘阿尔法（Alpha）：扣除大盘收益后的超额
 function alphaToMarket(stockReturns, marketReturns, riskFree = 0.025/252) {
   if (stockReturns.length !== marketReturns.length || stockReturns.length < 10) return 0;
   const b = betaToMarket(stockReturns, marketReturns);
@@ -1150,32 +1250,26 @@ function alphaToMarket(stockReturns, marketReturns, riskFree = 0.025/252) {
   return (meanS - riskFree) - b * (meanM - riskFree);
 }
 
-// 13. 信息比率 IR（Information Ratio）：超额收益的稳定性
 function informationRatio(stockReturns, marketReturns) {
   if (stockReturns.length !== marketReturns.length || stockReturns.length < 10) return 0;
   const n = stockReturns.length;
-  // 超额收益 = 个股收益 - 大盘收益
   const excess = stockReturns.map((r, i) => r - marketReturns[i]);
   const mean = excess.reduce((a, b) => a + b, 0) / n;
   if (n < 2) return 0;
   const variance = excess.reduce((s, r) => s + (r - mean) ** 2, 0) / (n - 1);
   const std = Math.sqrt(variance);
   if (std === 0) return 0;
-  // 年化
   return (mean / std) * Math.sqrt(252);
 }
 
-// 14. 趋势强度（ADX 简化版）
 function trendStrength(closes, period = 14) {
   if (closes.length < period * 2) return 0;
-  // 用 close vs MA(period) 的偏离度衡量趋势强度
   const ma = closes.slice(-period).reduce((a, b) => a + b, 0) / period;
   const last = closes[closes.length - 1];
   const deviation = (last - ma) / ma;
-  return Math.min(Math.abs(deviation) * 100, 100);  // 0~100
+  return Math.min(Math.abs(deviation) * 100, 100);
 }
 
-// 15. 相关性系数（Pearson）
 function correlation(a, b) {
   if (a.length !== b.length || a.length < 2) return 0;
   const n = a.length;
@@ -1190,34 +1284,34 @@ function correlation(a, b) {
   return num / Math.sqrt(da * db);
 }
 
-// 10. 一次性算出全部量化指标（主入口）
 function quantMetrics(closes, returns, marketCloses) {
   if (!returns) returns = dailyReturns(closes);
   const result = {
     annualReturn: annualReturn(returns),
     volatility: volatility(returns),
     sharpe: sharpeRatio(returns),
-    sortino: sortinoRatio(returns),                      // 新增
+    sortino: sortinoRatio(returns),
     maxDrawdown: maxDrawdown(closes),
     calmar: calmarRatio(returns, closes),
-    trendStrength: trendStrength(closes),                // 新增
+    trendStrength: trendStrength(closes),
     sampleDays: closes.length,
   };
-  // 如果给了大盘数据，算 β / α / IR
   if (marketCloses && marketCloses.length > 30) {
     const marketReturns = dailyReturns(marketCloses);
     const len = Math.min(returns.length, marketReturns.length);
     const sR = returns.slice(-len);
     const mR = marketReturns.slice(-len);
     result.beta = betaToMarket(sR, mR);
-    result.alpha = alphaToMarket(sR, mR) * 252;          // 年化
+    result.alpha = alphaToMarket(sR, mR) * 252;
     result.infoRatio = informationRatio(sR, mR);
     result.correlation = correlation(sR, mR);
   }
   return result;
 }
 
-// 暴露到全局，便于 Node 端测试
+// ============================================
+// 导出（Node 和 浏览器）
+// ============================================
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     summarize, backtestSignal, quickSignal, calcPivots, pivotSignal,
@@ -1225,15 +1319,15 @@ if (typeof module !== 'undefined' && module.exports) {
     calcMA, calcEMA, calcRSI, calcMACD, calcKDJ, calcBOLL, calcATR,
     calcROC, calcWR, calcOBV, obvTrend, calcVR, calcVolMA, calcCCI, calcADX,
     prefetchAll, getCacheAge, CACHE_TTL,
-    // 量化指标
     dailyReturns, volatility, annualReturn, sharpeRatio, maxDrawdown,
     calmarRatio, winRateAndPayoff, advancedBacktest, multiTimeframeConfirm,
     quantMetrics,
     sortinoRatio, betaToMarket, alphaToMarket, informationRatio,
     trendStrength, correlation,
+    // 新增
+    fetchQuotesBatch, getCacheStats, lruCacheClean,
   };
 }
-// 暴露到浏览器全局
 if (typeof window !== 'undefined') {
   window.prefetchAll = prefetchAll;
   window.getCacheAge = getCacheAge;
@@ -1241,4 +1335,8 @@ if (typeof window !== 'undefined') {
   window.quantMetrics = quantMetrics;
   window.sharpeRatio = sharpeRatio;
   window.maxDrawdown = maxDrawdown;
+  // 新增暴露
+  window.fetchQuotesBatch = fetchQuotesBatch;
+  window.getCacheStats = getCacheStats;
+  window.lruCacheClean = lruCacheClean;
 }
