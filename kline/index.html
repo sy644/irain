@@ -779,7 +779,9 @@
         // 数据加载
         // ============================================================
         async function refreshStocks() {
+            window._step('refreshStocks: start');
             const stocks = loadStocks();
+            window._step('refreshStocks: loadStocks -> ' + stocks.length + ' items');
             if (!stocks.length) {
                 document.getElementById('stockList').innerHTML = `
                         <div class="list-head">
@@ -852,12 +854,16 @@
                 }
             }
 
+            window._step('refreshStocks: about to renderStockCards, stocks=' + stocks.length);
             renderStockCards(stocks);
+            window._step('refreshStocks: renderStockCards done');
             updateTimeDisplay();
         }
 
         function renderStockCards(stocks) {
+            window._step('renderStockCards: called with ' + stocks.length);
             const list = document.getElementById('stockList');
+            window._step('renderStockCards: list element ' + (list ? 'found' : 'NOT FOUND'));
             if (!stocks.length) {
                 list.innerHTML = `
                         <div class="list-head">
@@ -1239,8 +1245,40 @@
         window.addEventListener('error', (ev) => _renderError(ev.error || ev.message));
         window.addEventListener('unhandledrejection', (ev) => _renderError(ev.reason));
 
+        // 把所有 console 输出也镜像到页面（用于看不到 devtools 时排查）
+        (function () {
+            const _log = console.log, _warn = console.warn, _err = console.error;
+            function _mirror(level, args) {
+                try {
+                    let el = document.getElementById('_dbg');
+                    if (!el) {
+                        el = document.createElement('div');
+                        el.id = '_dbg';
+                        el.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;max-height:40vh;overflow:auto;background:#1a202c;color:#e2e8f0;font:11px/1.4 monospace;padding:8px;border-radius:6px;z-index:99999;white-space:pre-wrap;word-break:break-all;';
+                        document.body.appendChild(el);
+                    }
+                    const line = document.createElement('div');
+                    line.style.color = level === 'err' ? '#fc8181' : level === 'warn' ? '#f6e05e' : '#9ae6b4';
+                    line.textContent = '[' + level + '] ' + Array.from(args).map(a => {
+                        try { return typeof a === 'string' ? a : JSON.stringify(a); } catch { return String(a); }
+                    }).join(' ');
+                    el.appendChild(line);
+                    while (el.children.length > 30) el.removeChild(el.firstChild);
+                } catch {}
+            }
+            console.log = function () { _mirror('log', arguments); _log.apply(console, arguments); };
+            console.warn = function () { _mirror('warn', arguments); _warn.apply(console, arguments); };
+            console.error = function () { _mirror('err', arguments); _err.apply(console, arguments); };
+        })();
+
+        // 阶段日志：标记 refreshStocks 走到了哪一步
+        window._step = (label) => console.log('🔵 STEP:', label);
+
         window.addEventListener('load', () => {
-            refreshStocks().catch(e => _renderError(e));
+            window._step('window.load fired');
+            refreshStocks()
+                .then(() => window._step('refreshStocks resolved'))
+                .catch(e => _renderError(e));
             loadMarketData();
             setInterval(() => refreshStocks().catch(e => _renderError(e)), 60000);
             setInterval(loadMarketData, 60000);
