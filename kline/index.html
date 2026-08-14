@@ -6,10 +6,9 @@
     <title>自选股 · 智能参谋</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js"></script>
-    <!-- 加载 app.js，确保信号计算与详情页一致 -->
     <script src="app.js"></script>
     <style>
-        /* 样式与之前完全相同，为节省篇幅此处略，您可以直接用之前的样式 */
+        /* 样式和之前完全一样，为节省篇幅，此处省略（您可以用之前的样式） */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
             --bg-primary: #f5f7fa;
@@ -428,7 +427,6 @@
     </div>
 
     <div class="stock-list" id="stockList">
-        <!-- 加载中占位 -->
         <div class="empty-tip">⏳ 加载自选股中…</div>
     </div>
 
@@ -437,7 +435,7 @@
 
 <script>
 // ============================================================
-// 基础存储（修复：若 localStorage 为空数组，则回退默认）
+// 基础存储
 // ============================================================
 const STORAGE_KEY = 'stocks_v1';
 const DEFAULT_STOCKS = [
@@ -453,7 +451,6 @@ function loadStocks() {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return [...DEFAULT_STOCKS];
         const list = JSON.parse(raw);
-        // 若解析后为空数组，也返回默认
         return (list && list.length) ? list : [...DEFAULT_STOCKS];
     } catch { return [...DEFAULT_STOCKS]; }
 }
@@ -497,7 +494,7 @@ function removeStock(code) {
 }
 
 // ============================================================
-// 报价接口（增加超时和错误静默）
+// 报价接口
 // ============================================================
 async function fetchQuotesBatch(codes) {
     if (!codes || codes.length === 0) return {};
@@ -550,7 +547,7 @@ async function fetchKLine(code, count = 120) {
         })).filter(r => r.date && !isNaN(r.open));
     } catch (e) {
         console.warn('K线获取失败', code, e.message);
-        return null; // 返回 null 以便上层处理
+        return null;
     }
 }
 
@@ -585,7 +582,6 @@ function toast(msg) {
     setTimeout(() => el.remove(), 3000);
 }
 
-// 简化的信号 fallback（与 app.js 逻辑尽量一致）
 function fallbackSignal(closes) {
     if (!closes || closes.length < 20) return { overall: '数据不足', action: '' };
     const n = closes.length;
@@ -599,7 +595,6 @@ function fallbackSignal(closes) {
     if (last > ma60) score++;
     if (ma5 > ma20) score++;
     if (ma20 > ma60) score++;
-    // 粗略 RSI
     let rsi = 50;
     if (closes.length >= 15) {
         const diffs = closes.slice(-15).map((v,i,a) => i>0 ? v-a[i-1] : 0);
@@ -618,11 +613,10 @@ function fallbackSignal(closes) {
 }
 
 // ============================================================
-// 核心刷新函数（增强容错）
+// 核心刷新
 // ============================================================
 async function refreshStocks() {
     const listContainer = document.getElementById('stockList');
-    // 先显示加载状态
     listContainer.innerHTML = `<div class="empty-tip">⏳ 更新数据中…</div>`;
 
     try {
@@ -648,7 +642,6 @@ async function refreshStocks() {
             console.warn('获取报价失败，将使用占位数据', e);
         }
 
-        // 先存入基础报价（即使没有也要有占位）
         for (const s of stocks) {
             const q = quotes[s.code];
             if (q && q.price > 0) {
@@ -663,7 +656,6 @@ async function refreshStocks() {
             }
         }
 
-        // 计算信号（逐只进行，有容错）
         for (const s of stocks) {
             const data = stockDataMap[s.code];
             if (!data || data.price === '--') continue;
@@ -686,7 +678,6 @@ async function refreshStocks() {
                         data.signal = sig.overall;
                         data.action = sig.action;
                     } else {
-                        // fallback
                         sig = fallbackSignal(closes);
                         data.signal = sig.overall;
                         data.action = sig.action;
@@ -703,7 +694,6 @@ async function refreshStocks() {
         }
 
         renderStockCards(stocks);
-        updateTimeDisplay();
     } catch (e) {
         console.error('刷新自选股失败', e);
         listContainer.innerHTML = `<div class="empty-tip">❌ 加载失败，请刷新重试</div>`;
@@ -766,7 +756,7 @@ function renderStockCards(stocks) {
     }
     list.innerHTML = html;
 
-    // 绑定点击（去详情）
+    // 点击跳转
     list.querySelectorAll('.stock-row').forEach(row => {
         row.addEventListener('click', () => {
             if (row.classList.contains('deleting') || row.classList.contains('removing')) return;
@@ -775,12 +765,11 @@ function renderStockCards(stocks) {
         });
     });
 
-    // 绑定长按删除
     bindLongPressDelete(list);
 }
 
 // ============================================================
-// 长按删除（不变）
+// 长按删除
 // ============================================================
 function bindLongPressDelete(container) {
     const LONG_PRESS_MS = 700;
@@ -855,57 +844,83 @@ function bindLongPressDelete(container) {
 }
 
 // ============================================================
-// 添加逻辑（不变）
+// 添加逻辑（修复：确保事件绑定在 load 后，并捕获错误）
 // ============================================================
-document.getElementById('addBtn').addEventListener('click', () => {
-    const input = document.getElementById('newStockInput').value.trim();
-    if (!input) { toast('请输入股票名称或代码'); return; }
-
-    if (/^\d{6}$/.test(input)) {
-        const res = addStock(input);
-        if (res.added) {
-            toast(`✅ 已添加 ${res.list[0].name}`);
-            document.getElementById('newStockInput').value = '';
-            refreshStocks();
-        } else {
-            toast(res.reason === 'duplicate' ? '该股票已在自选' : '添加失败，请检查代码');
+function setupAddButton() {
+    const addBtn = document.getElementById('addBtn');
+    if (!addBtn) {
+        console.error('添加按钮未找到');
+        return;
+    }
+    addBtn.addEventListener('click', function(e) {
+        console.log('添加按钮被点击');
+        const input = document.getElementById('newStockInput');
+        const val = input ? input.value.trim() : '';
+        console.log('输入值:', val);
+        if (!val) {
+            toast('请输入股票名称或代码');
+            return;
         }
-        return;
-    }
 
-    const allKnown = [...DEFAULT_STOCKS, ...loadStocks()];
-    const unique = {};
-    allKnown.forEach(s => unique[s.code] = s);
-    const candidates = Object.values(unique).filter(s => s.name.includes(input));
-    if (candidates.length === 0) {
-        toast('未找到匹配的股票，请尝试输入6位代码');
-        return;
-    }
-    if (candidates.length > 1) {
-        toast(`找到多个匹配（${candidates.map(c=>c.name).join('、')}），请使用代码添加`);
-        return;
-    }
-    const target = candidates[0];
-    const res = addStock(target.code);
-    if (res.added) {
-        toast(`✅ 已添加 ${res.list[0].name}`);
-        document.getElementById('newStockInput').value = '';
-        refreshStocks();
-    } else {
-        toast(res.reason === 'duplicate' ? '该股票已在自选' : '添加失败');
-    }
-});
+        try {
+            if (/^\d{6}$/.test(val)) {
+                const res = addStock(val);
+                if (res.added) {
+                    toast(`✅ 已添加 ${res.list[0].name}`);
+                    input.value = '';
+                    refreshStocks();
+                } else {
+                    toast(res.reason === 'duplicate' ? '该股票已在自选' : '添加失败，请检查代码');
+                }
+                return;
+            }
 
-document.getElementById('newStockInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') document.getElementById('addBtn').click();
-});
+            // 名称匹配
+            const allKnown = [...DEFAULT_STOCKS, ...loadStocks()];
+            const unique = {};
+            allKnown.forEach(s => unique[s.code] = s);
+            const candidates = Object.values(unique).filter(s => s.name.includes(val));
+            if (candidates.length === 0) {
+                toast('未找到匹配的股票，请尝试输入6位代码');
+                return;
+            }
+            if (candidates.length > 1) {
+                toast(`找到多个匹配（${candidates.map(c=>c.name).join('、')}），请使用代码添加`);
+                return;
+            }
+            const target = candidates[0];
+            const res = addStock(target.code);
+            if (res.added) {
+                toast(`✅ 已添加 ${res.list[0].name}`);
+                input.value = '';
+                refreshStocks();
+            } else {
+                toast(res.reason === 'duplicate' ? '该股票已在自选' : '添加失败');
+            }
+        } catch (err) {
+            console.error('添加股票出错:', err);
+            toast('添加失败，请检查控制台错误');
+        }
+    });
+}
+
+// 回车添加
+function setupEnterKey() {
+    const input = document.getElementById('newStockInput');
+    if (input) {
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('addBtn')?.click();
+            }
+        });
+    }
+}
 
 // ============================================================
 // OCR 识别（不变）
 // ============================================================
 const ocrBtn = document.getElementById('ocrBtn');
 const ocrFile = document.getElementById('ocrFile');
-
 ocrBtn.addEventListener('click', () => { ocrFile.click(); });
 let isOcrCanceled = false;
 
@@ -913,14 +928,9 @@ ocrFile.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     e.target.value = '';
-
     const overlay = showOcrOverlay('正在识别图片…', '首次使用需下载 OCR 引擎，约 2MB');
-
     try {
-        if (typeof Tesseract === 'undefined') {
-            throw new Error('OCR 引擎未加载，请检查网络');
-        }
-
+        if (typeof Tesseract === 'undefined') throw new Error('OCR 引擎未加载');
         const { data: { text } } = await Tesseract.recognize(file, 'eng', {
             logger: m => {
                 if (m.status === 'recognizing text') {
@@ -930,13 +940,11 @@ ocrFile.addEventListener('change', async (e) => {
                 }
             }
         });
-
         const codes = extractStockCodes(text);
         if (codes.length === 0) {
             updateOcrOverlay('❌ 未识别到有效股票代码', '请确保图片清晰且包含 6 位数字代码', true);
             return;
         }
-
         updateOcrOverlay(`✅ 识别到 ${codes.length} 个代码`, codes.join(', '));
         let addedCount = 0, dupCount = 0;
         for (const code of codes) {
@@ -1053,13 +1061,17 @@ setInterval(() => {
 }, 1000);
 
 // ============================================================
-// 初始化
+// 初始化（在 load 中绑定添加按钮）
 // ============================================================
-window.addEventListener('load', () => {
+window.addEventListener('load', function() {
     refreshStocks();
     loadMarketData();
     setInterval(refreshStocks, 60000);
     setInterval(loadMarketData, 60000);
+    // 绑定添加按钮和回车
+    setupAddButton();
+    setupEnterKey();
+    console.log('页面加载完成，添加按钮已绑定');
 });
 </script>
 </body>
