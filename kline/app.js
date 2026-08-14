@@ -1343,4 +1343,9 @@ if (typeof window !== 'undefined') {
   window.fetchQuotesBatch = fetchQuotesBatch;
   window.getCacheStats = getCacheStats;
   window.lruCacheClean = lruCacheClean;
+  // 首页列表需要用：信号计算 + 枢轴点
+  window.summarize = summarize;
+  window.calcPivots = calcPivots;
+  window.quickSignal = quickSignal;
+  window.backtestSignal = backtestSignal;
 }
