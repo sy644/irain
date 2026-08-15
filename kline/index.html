@@ -806,7 +806,7 @@
                 const codes = stocks.map(s => s.code);
                 // 1. 批量实时报价（1次请求）
                 let quotes = {};
-                try { quotes = await fetchQuotesBatch(codes); } catch (e) { console.warn(e); }
+                try { quotes = await fetchQuotesMulti(codes); } catch (e) { console.warn(e); }
 
                 // 先填充报价骨架
                 for (const s of stocks) {
@@ -857,7 +857,7 @@
 
                             // 缓存不足则网络拉取
                             if (!kline || kline.length < 60) {
-                                kline = await fetchKLine(s.code, 120);
+                                kline = await fetchKLineMulti(s.code, 120);
                                 fromCache = false;
                             }
 
@@ -912,8 +912,8 @@
                             <div class="list-head">
                                 <div class="h-name">名称</div>
                                 <div class="h-price">价格</div>
-                                <div class="h-pct">涨跌幅</div>
-                                <div class="h-sig">信号</div>
+                                <div class="h-pct">涨跌</div>
+                                <div class="h-sig">信号·建议</div>
                             </div>
                             <div class="empty-tip">暂无自选股，请添加</div>
                         `;
@@ -924,8 +924,8 @@
                         <div class="list-head">
                             <div class="h-name">名称</div>
                             <div class="h-price">价格</div>
-                            <div class="h-pct">涨跌幅</div>
-                            <div class="h-sig">信号</div>
+                            <div class="h-pct">涨跌</div>
+                            <div class="h-sig">信号·建议</div>
                         </div>
                     `;
 
@@ -935,6 +935,9 @@
                     const change = d.change ?? 0;
                     const changePct = d.changePercent ?? 0;
                     const signal = d.signal || '--';
+                    const action = d.action || '';
+                    const position = d.position || 0;
+                    const confidence = d.confidence || 0;
 
                     const priceDisplay = typeof price === 'number' ? price.toFixed(2) : price;
                     const chgDisplay = typeof change === 'number' ? change.toFixed(2) : '0.00';
@@ -951,6 +954,9 @@
                         badgeCls = 'hold';
                         badgeText = signal === '--' ? '观望' : (signal === '中性' ? '持有' : '观望'); }
 
+                    const posColor = position >= 50 ? '#e53e3e' : position >= 25 ? '#d69e2e' : position > 0 ? '#38a169' : '#a0aec0';
+                    const posText = position >= 50 ? '重仓' : position >= 25 ? '轻仓' : position > 0 ? '观望' : '空仓';
+
                     html += `
                             <div class="stock-row" data-code="${s.code}" data-action="${signal === '--' ? '计算中' : ''}">
                                 <div class="hold-progress"><span class="progress-text">松开取消</span></div>
@@ -960,7 +966,248 @@
                                 </div>
                                 <div class="col-price">${priceDisplay}</div>
                                 <div class="col-pct ${cls}">${sign}${pctDisplay}%</div>
-                                <div class="col-sig"><span class="signal-badge ${badgeCls}">${badgeText}</span></div>
+                                <div class="col-sig">
+                                    <span class="signal-badge ${badgeCls}">${badgeText}</span>
+                                    <div style="font-size:10px;color:#718096;margin-top:2px;line-height:1.3;">${action}${confidence ? '·置信'+confidence+'%' : ''}</div>
+                                    <div style="font-size:10px;color:${posColor};font-weight:600;">${posText} ${position}%</div>
+                                </div>
+                            </div>
+                        `;
+                }
+                list.innerHTML = html;
+
+                // 绑定点击（去详情）
+                list.querySelectorAll('.stock-row').forEach(row => {
+                    row.addEventListener('click', () => {
+                        if (row.classList.contains('deleting') || row.classList.contains('removing')) return;
+                        const code = row.dataset.code;
+                        if (code) location.href = `stock.html?code=${encodeURIComponent(code)}`;
+                    });
+                });
+
+                // 绑定长按删除
+                bindLongPressDelete(list);
+            }
+
+function updateTimeDisplay() {
+                const now = new Date();
+                const t = document.getElementById('updateTime');
+                if (t) t.textContent = now.toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit',
+                    hour12: false });
+            }
+
+            // 简易技术信号（无 app.js 时兜底）
+            function simpleSignal(closes) {
+                if (closes.length < 20) return { overall: '数据不足', action: '' };
+                const n = closes.length;
+                const ma5 = closes.slice(-5).reduce((a, b) => a + b, 0) / 5;
+                const ma20 = closes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+                const last = closes[n - 1],
+                    prev = closes[n - 2];
+                const change = last - prev;
+                const pct = (change / prev) * 100;
+                let score = 0;
+                if (last > ma5) score++;
+                if (last > ma20) score++;
+                if (ma5 > ma20) score++;
+                if (change > 0) score += 0.5;
+                else score -= 0.5;
+                let overall = '中性',
+                    action = '';
+                if (score >= 2.5) overall = '买入';
+                else if (score <= 0.5) overall = '卖出';
+                if (overall === '买入') action = pct > 0 ? '顺势跟进，注意仓位' : '回调低吸机会';
+                else if (overall === '卖出') action = pct < 0 ? '跌破均线，建议减仓' : '高位滞涨，谨慎';
+                return { overall, action };
+            }
+
+            // ============================================================
+            // 数据加载
+            // ============================================================
+            async function refreshStocks() {
+                const stocks = loadStocks();
+                if (!stocks.length) {
+                    document.getElementById('stockList').innerHTML = `
+                            <div class="list-head">
+                                <div class="h-name">名称</div>
+                                <div class="h-price">价格</div>
+                                <div class="h-pct">涨跌幅</div>
+                                <div class="h-sig">信号</div>
+                            </div>
+                            <div class="empty-tip">暂无自选股，请添加</div>
+                        `;
+                    return;
+                }
+
+                const codes = stocks.map(s => s.code);
+                // 1. 批量实时报价（1次请求）
+                let quotes = {};
+                try { quotes = await fetchQuotesMulti(codes); } catch (e) { console.warn(e); }
+
+                // 先填充报价骨架
+                for (const s of stocks) {
+                    const q = quotes[s.code];
+                    if (q && q.price > 0) {
+                        stockDataMap[s.code] = {
+                            price: q.price,
+                            change: q.change,
+                            changePercent: q.changePercent,
+                            volume: q.volume,
+                            updateTime: Date.now(),
+                            signal: stockDataMap[s.code]?.signal || '计算中…',
+                            action: stockDataMap[s.code]?.action || '',
+                        };
+                    } else if (!stockDataMap[s.code]) {
+                        stockDataMap[s.code] = { price: '--', change: 0, changePercent: 0, volume: 0, updateTime: Date.now(),
+                            signal: '--', action: '' };
+                    }
+                }
+                renderStockCards(stocks); // 先渲染报价（秒开）
+
+                // 2. 信号计算：优先用历史缓存K线（和详情页完全一致的summarize逻辑）
+                const needCalc = stocks.filter(s => stockDataMap[s.code]?.price !== '--');
+                const CONCURRENCY = 3;
+
+                for (let i = 0; i < needCalc.length; i += CONCURRENCY) {
+                    const batch = needCalc.slice(i, i + CONCURRENCY);
+                    await Promise.all(batch.map(async (s) => {
+                        try {
+                            let kline = null;
+                            let fromCache = false;
+
+                            // 先尝试从历史表读K线（避免网络请求）
+                            try {
+                                const cached = HistoryTable.getRecent(s.code, 120);
+                                if (cached && cached.length >= 60) {
+                                    kline = cached.map(r => ({
+                                        date: r.date,
+                                        open: r.open,
+                                        high: r.high,
+                                        low: r.low,
+                                        close: r.close,
+                                        volume: r.volume,
+                                    }));
+                                    fromCache = true;
+                                }
+                            } catch (e) { /* ignore */ }
+
+                            // 缓存不足则网络拉取
+                            if (!kline || kline.length < 60) {
+                                kline = await fetchKLineMulti(s.code, 120);
+                                fromCache = false;
+                            }
+
+                            if (kline && kline.length > 20) {
+                                const closes = kline.map(d => d.close);
+                                let sig;
+                                if (typeof window.summarize === 'function') {
+                                    const highs = kline.map(d => d.high);
+                                    const lows = kline.map(d => d.low);
+                                    const opens = kline.map(d => d.open);
+                                    const vols = kline.map(d => d.volume);
+                                    const prev = kline[kline.length - 2] || kline[kline.length - 1];
+                                    let pivots = null;
+                                    if (typeof window.calcPivots === 'function') {
+                                        pivots = window.calcPivots(prev.high, prev.low, prev.close);
+                                    }
+                                    sig = window.summarize(closes, highs, lows, opens, vols, pivots);
+                                    stockDataMap[s.code].signal = sig.overall;
+                                    stockDataMap[s.code].action = sig.action;
+                                    stockDataMap[s.code].position = sig.position || 0;
+                                    stockDataMap[s.code].confidence = sig.confidence || 0;
+                                    stockDataMap[s.code].trend = sig.trend || '';
+                                } else {
+                                    sig = simpleSignal(closes);
+                                    stockDataMap[s.code].signal = sig.overall;
+                                    stockDataMap[s.code].action = sig.action;
+                                    stockDataMap[s.code].position = sig.position || 0;
+                                    stockDataMap[s.code].confidence = sig.confidence || 0;
+                                    stockDataMap[s.code].trend = sig.trend || '';
+                                }
+                                if (fromCache) {
+                                    stockDataMap[s.code].signal += '·';
+                                }
+                            } else {
+                                stockDataMap[s.code].signal = '数据不足';
+                            }
+                        } catch (e) {
+                            console.warn(`信号计算失败 ${s.code}:`, e);
+                            stockDataMap[s.code].signal = '计算失败';
+                        }
+                    }));
+                    renderStockCards(stocks); // 每批算完更新一次
+                }
+
+                updateTimeDisplay();
+            }
+
+            function renderStockCards(stocks) {
+                const list = document.getElementById('stockList');
+                if (!stocks.length) {
+                    list.innerHTML = `
+                            <div class="list-head">
+                                <div class="h-name">名称</div>
+                                <div class="h-price">价格</div>
+                                <div class="h-pct">涨跌</div>
+                                <div class="h-sig">信号·建议</div>
+                            </div>
+                            <div class="empty-tip">暂无自选股，请添加</div>
+                        `;
+                    return;
+                }
+
+                let html = `
+                        <div class="list-head">
+                            <div class="h-name">名称</div>
+                            <div class="h-price">价格</div>
+                            <div class="h-pct">涨跌</div>
+                            <div class="h-sig">信号·建议</div>
+                        </div>
+                    `;
+
+                for (const s of stocks) {
+                    const d = stockDataMap[s.code] || {};
+                    const price = d.price ?? '--';
+                    const change = d.change ?? 0;
+                    const changePct = d.changePercent ?? 0;
+                    const signal = d.signal || '--';
+                    const action = d.action || '';
+                    const position = d.position || 0;
+                    const confidence = d.confidence || 0;
+
+                    const priceDisplay = typeof price === 'number' ? price.toFixed(2) : price;
+                    const chgDisplay = typeof change === 'number' ? change.toFixed(2) : '0.00';
+                    const pctDisplay = typeof changePct === 'number' ? changePct.toFixed(2) : '0.00';
+                    const cls = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
+                    const sign = change > 0 ? '+' : '';
+
+                    let badgeCls = 'hold',
+                        badgeText = '观望';
+                    if (['强力买入', '买入', '左侧试探', '超卖区'].includes(signal)) { badgeCls = 'buy';
+                        badgeText = signal === '超卖区' ? '超卖' : '买入'; } else if (['强力卖出', '卖出', '高空防守', '超买区'].includes(
+                        signal)) { badgeCls = 'sell';
+                        badgeText = signal === '超买区' ? '超买' : '卖出'; } else if (['中性', '观望', '持有', '--'].includes(signal)) {
+                        badgeCls = 'hold';
+                        badgeText = signal === '--' ? '观望' : (signal === '中性' ? '持有' : '观望'); }
+
+                    // 仓位颜色与文字
+                    const posColor = position >= 50 ? '#e53e3e' : position >= 25 ? '#d69e2e' : position > 0 ? '#38a169' : '#a0aec0';
+                    const posText = position >= 50 ? '重仓' : position >= 25 ? '轻仓' : position > 0 ? '观望' : '空仓';
+
+                    html += `
+                            <div class="stock-row" data-code="${s.code}" data-action="${signal === '--' ? '计算中' : ''}">
+                                <div class="hold-progress"><span class="progress-text">松开取消</span></div>
+                                <div class="col-name">
+                                    <div class="name">${s.name}</div>
+                                    <div class="code">${s.code.toUpperCase()}</div>
+                                </div>
+                                <div class="col-price">${priceDisplay}</div>
+                                <div class="col-pct ${cls}">${sign}${pctDisplay}%</div>
+                                <div class="col-sig">
+                                    <span class="signal-badge ${badgeCls}">${badgeText}</span>
+                                    <div style="font-size:10px;color:#718096;margin-top:2px;line-height:1.3;">${action}${confidence ? '·置信'+confidence+'%' : ''}</div>
+                                    <div style="font-size:10px;color:${posColor};font-weight:600;">${posText} ${position}%</div>
+                                </div>
                             </div>
                         `;
                 }
@@ -1232,7 +1479,7 @@
             async function loadMarketData() {
                 try {
                     const codes = MARKET.map(toFullCode);
-                    mq = await fetchQuotesBatch(codes);
+                    mq = await fetchQuotesMulti(codes);
                     renderMarketTicker();
                 } catch (e) { console.warn('指数加载失败', e); }
             }
