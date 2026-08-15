@@ -804,11 +804,18 @@
                 }
 
                 const codes = stocks.map(s => s.code);
+                // 1. 批量实时报价（1次请求）
                 let quotes = {};
                 try { quotes = await fetchQuotesBatch(codes); } catch (e) { console.warn(e); }
 
+                // 2. 从历史表读取信号（避免每只都拉 K线）
+                let historySignals = [];
+                try { historySignals = HistoryTable.getWatchlist(); } catch (e) { console.warn('读取历史表失败', e); }
+                const signalMap = new Map(historySignals.map(h => [h.code, h]));
+
                 for (const s of stocks) {
                     const q = quotes[s.code];
+                    const hist = signalMap.get(s.code);
                     if (q && q.price > 0) {
                         stockDataMap[s.code] = {
                             price: q.price,
@@ -816,49 +823,22 @@
                             changePercent: q.changePercent,
                             volume: q.volume,
                             updateTime: Date.now(),
-                            signal: stockDataMap[s.code]?.signal || '--',
-                            action: stockDataMap[s.code]?.action || '',
+                            signal: hist?.overall || '数据不足',
+                            action: hist?.action || '',
+                        };
+                    } else if (hist) {
+                        stockDataMap[s.code] = {
+                            price: hist.close ?? '--',
+                            change: hist.change ?? 0,
+                            changePercent: hist.changePct ?? 0,
+                            volume: hist.volume ?? 0,
+                            updateTime: hist.updatedAt ? new Date(hist.updatedAt).getTime() : Date.now(),
+                            signal: hist.overall || '数据不足',
+                            action: hist.action || '',
                         };
                     } else if (!stockDataMap[s.code]) {
                         stockDataMap[s.code] = { price: '--', change: 0, changePercent: 0, volume: 0, updateTime: Date.now(),
                             signal: '--', action: '' };
-                    }
-                }
-
-                // 计算信号
-                for (const s of stocks) {
-                    const data = stockDataMap[s.code];
-                    if (!data || data.price === '--') continue;
-                    try {
-                        const kline = await fetchKLine(s.code, 120);
-                        if (kline && kline.length > 20) {
-                            const closes = kline.map(d => d.close);
-                            let sig;
-                            if (typeof window.summarize === 'function') {
-                                const highs = kline.map(d => d.high);
-                                const lows = kline.map(d => d.low);
-                                const opens = kline.map(d => d.open);
-                                const vols = kline.map(d => d.volume);
-                                const prev = kline[kline.length - 2] || kline[kline.length - 1];
-                                let pivots = null;
-                                if (typeof window.calcPivots === 'function') {
-                                    pivots = window.calcPivots(prev.high, prev.low, prev.close);
-                                }
-                                sig = window.summarize(closes, highs, lows, opens, vols, pivots);
-                                data.signal = sig.overall;
-                                data.action = sig.action;
-                            } else {
-                                sig = simpleSignal(closes);
-                                data.signal = sig.overall;
-                                data.action = sig.action;
-                            }
-                        } else {
-                            data.signal = '数据不足';
-                            data.action = '';
-                        }
-                    } catch (e) {
-                        data.signal = '--';
-                        data.action = '计算失败';
                     }
                 }
 
@@ -1249,41 +1229,14 @@
             window.addEventListener('error', (ev) => _renderError(ev.error || ev.message));
             window.addEventListener('unhandledrejection', (ev) => _renderError(ev.reason));
 
-            // 镜像 console 输出（用于移动端调试）
-            (function () {
-                const _log = console.log, _warn = console.warn, _err = console.error;
-                function _mirror(level, args) {
-                    try {
-                        let el = document.getElementById('_dbg');
-                        if (!el) {
-                            el = document.createElement('div');
-                            el.id = '_dbg';
-                            el.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;max-height:40vh;overflow:auto;background:#1a202c;color:#e2e8f0;font:11px/1.4 monospace;padding:8px;border-radius:6px;z-index:99999;white-space:pre-wrap;word-break:break-all;';
-                            document.body.appendChild(el);
-                        }
-                        const line = document.createElement('div');
-                        line.style.color = level === 'err' ? '#fc8181' : level === 'warn' ? '#f6e05e' : '#9ae6b4';
-                        line.textContent = '[' + level + '] ' + Array.from(args).map(a => {
-                            try { return typeof a === 'string' ? a : JSON.stringify(a); } catch { return String(a); }
-                        }).join(' ');
-                        el.appendChild(line);
-                        while (el.children.length > 30) el.removeChild(el.firstChild);
-                    } catch {}
-                }
-                console.log = function () { _mirror('log', arguments); _log.apply(console, arguments); };
-                console.warn = function () { _mirror('warn', arguments); _warn.apply(console, arguments); };
-                console.error = function () { _mirror('err', arguments); _err.apply(console, arguments); };
-            })();
 
-            window._step = (label) => console.log('🔵 STEP:', label);
 
             // ============================================================
             // 初始化
             // ============================================================
             window.addEventListener('load', () => {
-                window._step('window.load fired');
-                refreshStocks()
-                    .then(() => window._step('refreshStocks resolved'))
+                                refreshStocks()
+                    
                     .catch(e => _renderError(e));
                 loadMarketData();
                 setInterval(() => refreshStocks().catch(e => _renderError(e)), 60000);

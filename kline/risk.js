@@ -323,7 +323,6 @@ if (typeof module !== 'undefined' && module.exports) {
     checkDrawdown,
     checkStopLossPenetration,
     updateTrailingStop,
-    adjustForExDividend,
     detectDivergence,
     applyRiskLimits,
     computeRiskLevel,

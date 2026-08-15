@@ -713,19 +713,14 @@ function computeQuantMetrics(data, sum) {
     ir = informationRatio(sR, mr);
     corr = correlation(sR, mr);
   }
-  // 盈亏因子（用 backtest 估算）
+  // 盈亏因子（基于历史收益独立计算，避免嵌套回测过拟合）
   let pf = null;
-  if (sum && sum.backtest && sum.backtest.buySamples > 5) {
-    const wr = sum.backtest.buyWinRate;
-    const avg = sum.backtest.buyAvgRet;
-    if (wr >= 1) pf = 99;
-    else if (wr > 1/3 && avg !== 0) {
-      const avgLoss = -avg / (3 * wr - 1);
-      const avgWin = -2 * avgLoss;
-      pf = avgLoss > 0 ? avgWin / avgLoss : 0;
-    } else {
-      pf = 0;
-    }
+  if (returns.length > 20) {
+    const wins = returns.filter(r => r > 0);
+    const losses = returns.filter(r => r < 0);
+    const avgWin = wins.length ? wins.reduce((a, b) => a + b, 0) / wins.length : 0;
+    const avgLoss = losses.length ? Math.abs(losses.reduce((a, b) => a + b, 0) / losses.length) : 0;
+    pf = avgLoss > 0 ? avgWin / avgLoss : (avgWin > 0 ? 99 : 0);
   }
   const strategicVerdict = {
     good:    sharpe >= 1 && calmar >= 1 && sortino >= 0.8,
@@ -957,6 +952,24 @@ async function initStock(code) {
     console.log(`[历史表] ${code} 写入 ${rows.length} 天数据`);
   } catch (e) { console.warn('写历史表失败', e); }
 
+  // 接入风控层
+  try {
+    const portfolio = {
+      equity: 100000,
+      cash: 100000,
+      peakEquity: 100000,
+      positions: []
+    };
+    const limits = window.__riskLimits || DEFAULT_RISK_LIMITS;
+    const riskResult = applyRiskLimits(sum, portfolio, limits);
+    sum.position = riskResult.position;
+    sum.riskChecks = riskResult.riskChecks || [];
+    sum.blocked = riskResult.blocked;
+    sum.blockReasons = riskResult.blockReasons || [];
+  } catch (e) {
+    console.warn('风控计算失败', e);
+  }
+
   renderPage(data, sum, pivots, currentPrice, change, changePct, null);
   drawChart(data, sum, pivots);
   bindNameEditor(code);
@@ -967,7 +980,7 @@ async function initStock(code) {
   const badge = document.getElementById('dataBadge');
   if (badge) {
     if (dataSource === 'history') { badge.textContent = '历史缓存'; badge.className = 'data-badge history'; }
-    else if (dataSource === 'partial-history') { badge.textContent = '部分历史'; badge.className = 'data-badge partial-history'; }
+    else if (dataSource === 'partial-history' || (basic && !basic.pe)) { badge.textContent = '部分历史'; badge.className = 'data-badge partial-history'; }
     else { badge.textContent = '实时'; badge.className = 'data-badge'; }
   }
 

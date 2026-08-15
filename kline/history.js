@@ -1,11 +1,10 @@
 // ============================================
-// 历史数据存档表（类似 Excel 工作表）
+// 历史数据存档表（分片存储版）
+// 每只股票独立存储，避免单表过大导致的性能瓶颈
 // ============================================
-// 集中存储所有自选股的历史数据快照
-// 每只股票每天一行：包含价格 + 基本面 + 技术信号 + 建议
 
-const HISTORY_KEY = 'history_v1';
-const HISTORY_LIMIT = 5000;           // 最多存 5000 行
+const HISTORY_PREFIX = 'hist_v2_';
+const HISTORY_LIMIT = 250;           // 每只股票最多存 250 天
 const HISTORY_COLUMNS = [
   { key: 'date',         label: '日期',     type: 'string' },
   { key: 'code',         label: '代码',     type: 'string' },
@@ -30,175 +29,157 @@ const HISTORY_COLUMNS = [
   { key: 'vpLabel',      label: '量价',     type: 'string' },
   { key: 'stopLoss',     label: '止损',     type: 'number' },
   { key: 'takeProfitR1', label: '止盈R1',   type: 'number' },
-  { key: 'dataSource',   label: '数据源',   type: 'string' },  // realtime/cached/fallback
+  { key: 'dataSource',   label: '数据源',   type: 'string' },
   { key: 'updatedAt',    label: '更新时间', type: 'string' },
 ];
 
 // ============================================
-// 1. 读取整张表
+// 1. 按 code 分片读写
 // ============================================
-function loadHistoryTable() {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    if (!raw) return createEmptyTable();
-    const t = JSON.parse(raw);
-    if (!t.rows) return createEmptyTable();
-    return t;
-  } catch {
-    return createEmptyTable();
-  }
-}
-function createEmptyTable() {
-  return {
-    meta: { version: 1, lastUpdate: null, tradeDate: null, rowCount: 0 },
-    columns: HISTORY_COLUMNS,
-    rows: [],
-  };
+function getHistoryKey(code) {
+  return HISTORY_PREFIX + code;
 }
 
-// ============================================
-// 2. 保存整张表（带容量控制）
-// ============================================
-function saveHistoryTable(t) {
+function loadStockHistory(code) {
   try {
-    // 限制行数（FIFO 淘汰旧的）
-    if (t.rows.length > HISTORY_LIMIT) {
-      t.rows = t.rows.slice(-HISTORY_LIMIT);
-    }
-    t.meta.rowCount = t.rows.length;
-    t.meta.lastUpdate = new Date().toISOString();
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(t));
+    const raw = localStorage.getItem(getHistoryKey(code));
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+function saveStockHistory(code, rows) {
+  try {
+    localStorage.setItem(getHistoryKey(code), JSON.stringify(rows));
     return true;
   } catch (e) {
     if (e.name === 'QuotaExceededError') {
-      // 满了 → 砍掉一半老数据再试
-      t.rows = t.rows.slice(Math.floor(t.rows.length / 2));
-      t.meta.rowCount = t.rows.length;
-      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(t)); return true; } catch {}
+      const trimmed = rows.slice(Math.floor(rows.length / 2));
+      try {
+        localStorage.setItem(getHistoryKey(code), JSON.stringify(trimmed));
+        return true;
+      } catch {}
     }
     return false;
   }
 }
 
 // ============================================
-// 3. 追加一行（同 code+date 已存在则覆盖）
-// ============================================
-function appendHistoryRow(row) {
-  const t = loadHistoryTable();
-  const idx = t.rows.findIndex(r => r.code === row.code && r.date === row.date);
-  if (idx >= 0) {
-    t.rows[idx] = { ...t.rows[idx], ...row };  // 覆盖
-  } else {
-    t.rows.push(row);
-  }
-  // 按 code+date 排序（让数据有序）
-  t.rows.sort((a, b) => {
-    if (a.code !== b.code) return a.code.localeCompare(b.code);
-    return a.date.localeCompare(b.date);
-  });
-  saveHistoryTable(t);
-  return t.rows.length;
-}
-
-// ============================================
-// 4. 批量追加（推荐用这个）
+// 2. 追加数据（按 code 分片，覆盖同日期）
 // ============================================
 function appendHistoryRows(rows) {
-  const t = loadHistoryTable();
-  rows.forEach(row => {
-    const idx = t.rows.findIndex(r => r.code === row.code && r.date === row.date);
-    if (idx >= 0) t.rows[idx] = { ...t.rows[idx], ...row };
-    else t.rows.push(row);
+  const byCode = {};
+  rows.forEach(r => {
+    if (!byCode[r.code]) byCode[r.code] = [];
+    byCode[r.code].push(r);
   });
-  t.rows.sort((a, b) => a.code === b.code ? a.date.localeCompare(b.date) : a.code.localeCompare(b.code));
-  return saveHistoryTable(t) ? t.rows.length : -1;
+
+  for (const [code, codeRows] of Object.entries(byCode)) {
+    const existing = loadStockHistory(code);
+    const map = new Map();
+    existing.forEach(r => map.set(r.date, r));
+    codeRows.forEach(r => {
+      const prev = map.get(r.date) || {};
+      map.set(r.date, { ...prev, ...r });
+    });
+    const sorted = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+    const trimmed = sorted.slice(-HISTORY_LIMIT);
+    saveStockHistory(code, trimmed);
+  }
+  return true;
+}
+
+function appendHistoryRow(row) {
+  return appendHistoryRows([row]);
 }
 
 // ============================================
-// 5. 查询（核心：替代实时数据源）
+// 3. 查询（O(1) 分片读取）
 // ============================================
-// 5.1 取某只股票最新一行（没实时数据时的主入口）
 function getLatestRow(code) {
-  const t = loadHistoryTable();
-  const rows = t.rows.filter(r => r.code === code);
-  if (!rows.length) return null;
-  return rows[rows.length - 1];
+  const arr = loadStockHistory(code);
+  return arr.length ? arr[arr.length - 1] : null;
 }
-// 5.2 取某只股票某天的一行
+
 function getRow(code, date) {
-  const t = loadHistoryTable();
-  return t.rows.find(r => r.code === code && r.date === date) || null;
+  const arr = loadStockHistory(code);
+  return arr.find(r => r.date === date) || null;
 }
-// 5.3 取某只股票最近 N 天
+
 function getRecentRows(code, n = 30) {
-  const t = loadHistoryTable();
-  return t.rows.filter(r => r.code === code).slice(-n);
+  const arr = loadStockHistory(code);
+  return arr.slice(-n);
 }
-// 5.4 取所有股票最近 1 行（用于首页/自选股列表）
+
 function getAllLatestRows() {
-  const t = loadHistoryTable();
-  const map = new Map();
-  t.rows.forEach(r => {
-    if (!map.has(r.code) || r.date > map.get(r.code).date) {
-      map.set(r.code, r);
-    }
-  });
-  return Array.from(map.values());
+  const keys = Object.keys(localStorage).filter(k => k.startsWith(HISTORY_PREFIX));
+  const result = [];
+  for (const key of keys) {
+    const code = key.replace(HISTORY_PREFIX, '');
+    const latest = getLatestRow(code);
+    if (latest) result.push(latest);
+  }
+  return result;
 }
-// 5.5 取所有自选股最新一行（结合 loadStocks 过滤）
+
 function getWatchlistLatest() {
   const stocks = loadStocks();
   const codes = new Set(stocks.map(s => s.code));
-  const latest = getAllLatestRows();
-  return latest.filter(r => codes.has(r.code));
+  return getAllLatestRows().filter(r => codes.has(r.code));
 }
 
 // ============================================
-// 6. 数据完整性
+// 4. 统计与清理
 // ============================================
 function getHistoryStats() {
-  const t = loadHistoryTable();
+  const keys = Object.keys(localStorage).filter(k => k.startsWith(HISTORY_PREFIX));
+  let totalRows = 0;
   const byCode = {};
-  t.rows.forEach(r => {
-    if (!byCode[r.code]) byCode[r.code] = { count: 0, first: r.date, last: r.date, name: r.name };
-    byCode[r.code].count++;
-    if (r.date < byCode[r.code].first) byCode[r.code].first = r.date;
-    if (r.date > byCode[r.code].last) byCode[r.code].last = r.date;
-  });
-  return {
-    totalRows: t.rows.length,
-    stockCount: Object.keys(byCode).length,
-    byCode,
-    lastUpdate: t.meta.lastUpdate,
-    usedBytes: (localStorage.getItem(HISTORY_KEY) || '').length,
-  };
+  for (const key of keys) {
+    const code = key.replace(HISTORY_PREFIX, '');
+    const rows = loadStockHistory(code);
+    totalRows += rows.length;
+    if (rows.length) {
+      byCode[code] = {
+        count: rows.length,
+        first: rows[0].date,
+        last: rows[rows.length - 1].date,
+        name: rows[rows.length - 1].name || code
+      };
+    }
+  }
+  return { totalRows, stockCount: Object.keys(byCode).length, byCode };
 }
 
-// ============================================
-// 7. 清理
-// ============================================
 function clearHistory() {
-  localStorage.removeItem(HISTORY_KEY);
+  const keys = Object.keys(localStorage).filter(k => k.startsWith(HISTORY_PREFIX));
+  keys.forEach(k => localStorage.removeItem(k));
 }
+
 function deleteStockHistory(code) {
-  const t = loadHistoryTable();
-  t.rows = t.rows.filter(r => r.code !== code);
-  saveHistoryTable(t);
+  localStorage.removeItem(getHistoryKey(code));
 }
 
 // ============================================
-// 8. 导出 CSV（类似 Excel 导出）
+// 5. 导出 CSV
 // ============================================
 function exportHistoryCSV() {
-  const t = loadHistoryTable();
-  const headers = t.columns.map(c => c.label).join(',');
-  const lines = t.rows.map(r => t.columns.map(c => {
+  const keys = Object.keys(localStorage).filter(k => k.startsWith(HISTORY_PREFIX));
+  const allRows = [];
+  for (const key of keys) {
+    allRows.push(...loadStockHistory(key.replace(HISTORY_PREFIX, '')));
+  }
+  allRows.sort((a, b) => a.code === b.code ? a.date.localeCompare(b.date) : a.code.localeCompare(b.code));
+
+  const headers = HISTORY_COLUMNS.map(c => c.label).join(',');
+  const lines = allRows.map(r => HISTORY_COLUMNS.map(c => {
     const v = r[c.key];
     if (v == null) return '';
     if (typeof v === 'string' && v.includes(',')) return `"${v}"`;
     return v;
   }).join(','));
-  return '\uFEFF' + [headers, ...lines].join('\n');  // 加 BOM 让 Excel 识别 UTF-8
+  return '\uFEFF' + [headers, ...lines].join('\n');
 }
 
 // ============================================
@@ -206,8 +187,8 @@ function exportHistoryCSV() {
 // ============================================
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    HISTORY_KEY, HISTORY_COLUMNS, HISTORY_LIMIT,
-    loadHistoryTable, saveHistoryTable,
+    HISTORY_PREFIX, HISTORY_COLUMNS, HISTORY_LIMIT,
+    loadStockHistory, saveStockHistory,
     appendHistoryRow, appendHistoryRows,
     getLatestRow, getRow, getRecentRows, getAllLatestRows, getWatchlistLatest,
     getHistoryStats, clearHistory, deleteStockHistory, exportHistoryCSV,
@@ -215,7 +196,7 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 if (typeof window !== 'undefined') {
   window.HistoryTable = {
-    load: loadHistoryTable,
+    load: () => ({ rows: getAllLatestRows(), columns: HISTORY_COLUMNS }),
     appendRow: appendHistoryRow,
     appendRows: appendHistoryRows,
     getLatest: getLatestRow,

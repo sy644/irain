@@ -873,26 +873,14 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
       action += ' · ⚠ 量价背离,价格涨但资金流出';
     }
   }
-  const backtest = quickBacktest(closes, highs, lows, opens, volumes);
-  if (backtest.buySamples >= 20) {
-    const wr = backtest.buyWinRate;
-    if (wr < 0.40) position = Math.round(position * 0.5);
-    else if (wr < 0.50) position = Math.round(position * 0.75);
-    else if (wr > 0.60) position = Math.min(100, Math.round(position * 1.1));
-  }
   const confScore = Math.abs(scoreRatio) * 70;
   const confVp    = Math.min(Math.abs(vpScore) / 2, 1) * 15;
   const confTrend = Math.min(Math.abs(trendScore) / 2, 1) * 10;
-  let confBack = 0;
-  if (backtest.buySamples >= 20) {
-    const wr = backtest.buyWinRate;
-    confBack = wr > 0.55 ? 5 : wr < 0.45 ? -10 : 0;
-  }
   const signalConsistency = (buyScore + sellScore > 0)
     ? Math.max(buyScore, sellScore) / (buyScore + sellScore)
     : 0.5;
   const confPenalty = signalConsistency < 0.6 ? -15 : 0;
-  confidence = Math.max(0, Math.min(100, Math.round(confScore + confVp + confTrend + confBack + confPenalty)));
+  confidence = Math.max(0, Math.min(100, Math.round(confScore + confVp + confTrend + confPenalty)));
 
   const anomalyIdx = [];
   for (let i = Math.max(5, last - 60); i <= last; i++) {
@@ -925,7 +913,6 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     pivotSignal, pivotLabel, pivotBuy, pivotSell,
     pivotBreakdown, pivotBreakout,
     pivots,
-    backtest,
     vpEvent, vpLabel, vpScore, vpDivergence,
     isFangLiang, isSuoLiang, todayVol, avgVol5,
     anomalyIdx,
