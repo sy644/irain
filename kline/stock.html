@@ -987,7 +987,7 @@ async function initStock(code) {
   try {
     basic = await fetchBasic(code);
     if (!basic) {
-      const lastRow = HistoryTable.getLatestRow(code);
+      const lastRow = HistoryTable.getLatest(code);
       if (lastRow && (lastRow.pe || lastRow.pb || lastRow.totalCap)) {
         basic = {
           pe: lastRow.pe, pb: lastRow.pb, totalCap: lastRow.totalCap,
