@@ -810,7 +810,7 @@ function calcTakeProfitStopLoss(price, pivots, boll, atrVal, ma20, ma60) {
     return { stopLoss, takeProfitLevels: targets, trailingStop };
 }
 
-function summarize(closes, highs, lows, opens, volumes, pivots) {
+function summarize(closes, highs, lows, opens, volumes, pivots, basic) {
   const last = closes.length - 1;
   const rsi = calcRSI(closes, 14);
   const macd = calcMACD(closes);
@@ -1016,11 +1016,15 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
   const backtest = quickBacktest(closes, highs, lows, opens, volumes);
 
   // 主力行为 & 基本面分析
-  const mainForce = analyzeMainForce(
-    data.map((d, i) => ({ close: d.close, open: d.open || d.close, high: d.high || d.close, low: d.low || d.close, volume: d.volume || 0 })),
-    basic
-  );
-  const fundamentals = analyzeFundamentals(basic);
+  const klineData = closes.map((c, i) => ({
+    close: c,
+    open: opens[i] || c,
+    high: highs[i] || c,
+    low: lows[i] || c,
+    volume: volumes[i] || 0
+  }));
+  const mainForce = analyzeMainForce(klineData, basic || null);
+  const fundamentals = analyzeFundamentals(basic || null);
 
   const tpSl = calcTakeProfitStopLoss(
       closes[last],

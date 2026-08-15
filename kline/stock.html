@@ -906,7 +906,7 @@ async function initStock(code) {
   const vols   = data.map(d => d.volume);
   const prev = data[data.length - 2] || data[data.length - 1];
   const pivots = calcPivots(prev.high, prev.low, prev.close);
-  const sum = summarize(closes, highs, lows, opens, vols, pivots);
+  const sum = summarize(closes, highs, lows, opens, vols, pivots, basic);
   // 量化联动（战略×战术）
   const qm = computeQuantMetrics(data, sum);
   applyQuantToSignal(sum, qm);
