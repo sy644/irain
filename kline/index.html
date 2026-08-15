@@ -877,10 +877,16 @@
                                     sig = window.summarize(closes, highs, lows, opens, vols, pivots);
                                     stockDataMap[s.code].signal = sig.overall;
                                     stockDataMap[s.code].action = sig.action;
+                                    stockDataMap[s.code].position = sig.position || 0;
+                                    stockDataMap[s.code].confidence = sig.confidence || 0;
+                                    stockDataMap[s.code].trend = sig.trend || '';
                                 } else {
                                     sig = simpleSignal(closes);
                                     stockDataMap[s.code].signal = sig.overall;
                                     stockDataMap[s.code].action = sig.action;
+                                    stockDataMap[s.code].position = sig.position || 0;
+                                    stockDataMap[s.code].confidence = sig.confidence || 0;
+                                    stockDataMap[s.code].trend = sig.trend || '';
                                 }
                                 if (fromCache) {
                                     stockDataMap[s.code].signal += '·';

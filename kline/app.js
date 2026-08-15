@@ -1,4 +1,110 @@
 // ============================================
+// 股票名称映射表（支持名称搜索添加）
+// ============================================
+const STOCK_NAME_MAP = {
+  // 截图中的股票
+  '中持股份': 'sh603903',
+  '山金国际': 'sz000975',
+  '易普力': 'sz002096',
+  '太极实业': 'sh600667',
+  '凡拓数创': 'sz301313',
+  '长电科技': 'sh600584',
+  '航天电子': 'sh600879',
+  '风华高科': 'sz000636',
+  '乾照光电': 'sz300102',
+  '格林美': 'sz002340',
+  // 默认股票
+  '贵州茅台': 'sh600519',
+  '平安银行': 'sz000001',
+  '宁德时代': 'sz300750',
+  '上证指数': 'sh000001',
+  '深证成指': 'sz399001',
+  // 常见大盘
+  '比亚迪': 'sz002594',
+  '五粮液': 'sz000858',
+  '招商银行': 'sh600036',
+  '中国平安': 'sh601318',
+  '中信证券': 'sh600030',
+  '东方财富': 'sz300059',
+  '隆基绿能': 'sh601012',
+  '药明康德': 'sh603259',
+  '迈瑞医疗': 'sz300760',
+  '海康威视': 'sz002415',
+  '美的集团': 'sz000333',
+  '格力电器': 'sz000651',
+  '恒瑞医药': 'sh600276',
+  '伊利股份': 'sh600887',
+  '海天味业': 'sh603288',
+  '中国中免': 'sh601888',
+  '宁德时代': 'sz300750',
+  '立讯精密': 'sz002475',
+  '京东方A': 'sz000725',
+  '工业富联': 'sh601138',
+  '紫金矿业': 'sh601899',
+  '长江电力': 'sh600900',
+  '兴业银行': 'sh601166',
+  '浦发银行': 'sh600000',
+  '民生银行': 'sh600016',
+  '北京银行': 'sh601169',
+  '江苏银行': 'sh600919',
+  '上海银行': 'sh601229',
+  '宁波银行': 'sz002142',
+  '杭州银行': 'sh600926',
+  '南京银行': 'sh601009',
+  '成都银行': 'sh601838',
+  '长沙银行': 'sh601577',
+  '苏州银行': 'sz002966',
+  '齐鲁银行': 'sh601665',
+  '厦门银行': 'sh601187',
+  '重庆银行': 'sh601963',
+  '贵阳银行': 'sh601997',
+  '郑州银行': 'sz002936',
+  '青岛银行': 'sz002948',
+  '西安银行': 'sh600928',
+  '青农商行': 'sz002958',
+  '紫金银行': 'sh601860',
+  '常熟银行': 'sh601128',
+  '无锡银行': 'sh600908',
+  '江阴银行': 'sz002807',
+  '张家港行': 'sz002839',
+  '苏农银行': 'sh603323',
+  '瑞丰银行': 'sh601528',
+};
+
+function findStockByName(name) {
+  const n = name.trim();
+  // 精确匹配
+  if (STOCK_NAME_MAP[n]) return STOCK_NAME_MAP[n];
+  // 模糊匹配
+  for (const [k, v] of Object.entries(STOCK_NAME_MAP)) {
+    if (k.includes(n) || n.includes(k)) return v;
+  }
+  return null;
+}
+
+// 从文本中提取股票代码
+function extractCodesFromText(text) {
+  const codes = [];
+  // 匹配 6 位数字（可能带市场前缀）
+  const matches = text.match(/(?:sh|sz|bj)?\d{6}/gi);
+  if (matches) {
+    for (const m of matches) {
+      let code = m.toLowerCase();
+      if (/^\d{6}$/.test(code)) {
+        // 自动判断市场
+        const head = code[0];
+        if (code.startsWith('000') || code.startsWith('6') || code.startsWith('9') || code.startsWith('5')) code = 'sh' + code;
+        else if (code.startsWith('399') || code.startsWith('1') || code.startsWith('0') || code.startsWith('3')) code = 'sz' + code;
+        else if (head === '4' || head === '8') code = 'bj' + code;
+        else code = 'sh' + code;
+      }
+      if (/^[a-z]{2}\d{6}$/.test(code)) codes.push(code);
+    }
+  }
+  return [...new Set(codes)];
+}
+
+// ============================================
 // 自选股存储
 // ============================================
 const STORAGE_KEY = 'stocks_v1';
@@ -24,6 +130,10 @@ function saveStocks(list) {
 function addStock(code) {
   const list = loadStocks();
   let c = code.toLowerCase().trim();
+
+  // 支持名称搜索
+  const byName = findStockByName(c);
+  if (byName) c = byName;
   if (/^\d{6}$/.test(c)) {
     const head = c[0];
     if (c.startsWith('000') || c.startsWith('6') || c.startsWith('9') || c.startsWith('5')) c = 'sh' + c;
@@ -204,16 +314,17 @@ function createConcurrencyLimiter(limit = 5) {
 const defaultLimiter = createConcurrencyLimiter(5);
 
 // ---- 带重试的 fetch ----
-async function fetchWithRetry(url, options = {}, retries = 3, baseDelay = 300) {
+async function fetchWithRetry(url, options = {}, retries = 3, baseDelay = 300, responseType = 'json') {
   let lastError;
   for (let i = 0; i < retries; i++) {
-    const timeout = 8000 + i * 2000;
+    const timeout = 5000 + i * 1500; // 5s, 6.5s, 8s（移动端优化）
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
       const res = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(timer);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (responseType === 'text') return await res.text();
       return await res.json();
     } catch (err) {
       clearTimeout(timer);
@@ -320,7 +431,7 @@ async function fetchQuotesBatch(codes) {
     const codeStr = batch.join(',');
     const url = `https://qt.gtimg.cn/q=${codeStr}`;
     try {
-      const text = await fetchWithRetry(url, {}, 2, 200);
+      const text = await fetchWithRetry(url, {}, 2, 200, 'text');
       const lines = text.split('\n').filter(line => line.trim());
       for (const line of lines) {
         const match = line.match(/v_([a-z]{2}\d{6})="(.+)"/);
@@ -1450,6 +1561,7 @@ if (typeof module !== 'undefined' && module.exports) {
     // 新增
     fetchQuotesBatch, getCacheStats, lruCacheClean,
     analyzeMainForce, analyzeFundamentals,
+    findStockByName, extractCodesFromText, STOCK_NAME_MAP,
   };
 }
 if (typeof window !== 'undefined') {
@@ -1465,6 +1577,8 @@ if (typeof window !== 'undefined') {
   window.lruCacheClean = lruCacheClean;
   window.analyzeMainForce = analyzeMainForce;
   window.analyzeFundamentals = analyzeFundamentals;
+  window.findStockByName = findStockByName;
+  window.extractCodesFromText = extractCodesFromText;
   // 首页列表需要用：信号计算 + 枢轴点
   window.summarize = summarize;
   window.calcPivots = calcPivots;
