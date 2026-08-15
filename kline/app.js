@@ -286,136 +286,6 @@ function getCacheStats() {
 }
 
 // ============================================
-// 多源备用接口（借鉴 sy644.github.io/j）
-// ============================================
-
-// 新浪实时报价（备用）
-async function fetchSinaQuotes(codes) {
-  if (!codes || codes.length === 0) return {};
-  const sinaCodes = codes.map(c => {
-    const m = c.startsWith('sh') ? 'sh' : c.startsWith('sz') ? 'sz' : 'bj';
-    const n = c.replace(/^[a-z]+/, '');
-    return m + n;
-  }).join(',');
-
-  const url = `https://hq.sinajs.cn/list=${sinaCodes}`;
-  try {
-    const res = await fetch(url, { 
-      headers: { 'Referer': 'https://finance.sina.com.cn' },
-      signal: AbortSignal.timeout(4000)
-    });
-    if (!res.ok) throw new Error('Sina HTTP ' + res.status);
-    const text = await res.text();
-    const results = {};
-    const lines = text.split(';').filter(l => l.includes('="'));
-    for (const line of lines) {
-      const match = line.match(/var hq_str_(sh\d{6}|sz\d{6}|bj\d{6})="([^"]*)"/);
-      if (!match) continue;
-      const code = match[1].replace(/^(sh|sz|bj)/, (m, p) => p);
-      const fields = match[2].split(',');
-      if (fields.length < 33) continue;
-      results[code] = {
-        name: fields[0] || code,
-        price: parseFloat(fields[3]) || 0,
-        change: parseFloat(fields[3]) - parseFloat(fields[2]) || 0,
-        changePercent: ((parseFloat(fields[3]) - parseFloat(fields[2])) / parseFloat(fields[2]) * 100) || 0,
-        volume: parseInt(fields[8]) || 0,
-        turnover: parseFloat(fields[9]) || 0,
-        open: parseFloat(fields[1]) || 0,
-        high: parseFloat(fields[4]) || 0,
-        low: parseFloat(fields[5]) || 0,
-        prevClose: parseFloat(fields[2]) || 0,
-      };
-    }
-    return results;
-  } catch (e) {
-    console.warn('新浪报价失败:', e.message);
-    return {};
-  }
-}
-
-// 东方财富 K线（备用）
-async function fetchEastmoneyKLine(code, count = 120) {
-  const m = code.startsWith('sh') ? '1' : code.startsWith('sz') ? '0' : '0';
-  const num = code.replace(/^[a-z]+/, '');
-  const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${m}.${num}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&end=20500101&limit=${count}`;
-
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
-    if (!res.ok) throw new Error('EM HTTP ' + res.status);
-    const data = await res.json();
-    if (data.rc !== 0 || !data.data || !data.data.klines) throw new Error('EM no data');
-    const arr = data.data.klines;
-    return arr.map(row => {
-      const parts = row.split(',');
-      return {
-        date: parts[0],
-        open: +parts[1],
-        close: +parts[2],
-        high: +parts[3],
-        low: +parts[4],
-        volume: +parts[5],
-        amount: +parts[6],
-      };
-    }).filter(r => r.date && !isNaN(r.open));
-  } catch (e) {
-    console.warn('东方财富K线失败:', e.message);
-    throw e;
-  }
-}
-
-// 多源统一报价（腾讯→新浪降级）
-async function fetchQuotesMulti(codes) {
-  // 1. 先尝试腾讯（主源）
-  try {
-    const result = await fetchQuotesBatch(codes);
-    const got = Object.keys(result).length;
-    if (got >= codes.length * 0.8) return result; // 80%成功即算成功
-    console.warn(`腾讯仅返回 ${got}/${codes.length}，降级新浪...`);
-    // 补充缺失的
-    const missing = codes.filter(c => !result[c]);
-    const sinaResult = await fetchSinaQuotes(missing);
-    return { ...result, ...sinaResult };
-  } catch (e) {
-    console.warn('腾讯批量失败，完全降级新浪:', e.message);
-    return await fetchSinaQuotes(codes);
-  }
-}
-
-// 多源统一K线（腾讯→东方财富降级）
-async function fetchKLineMulti(code, count = 120) {
-  const cacheKey = `kline_${code}_${count}`;
-  const fresh = getCacheWithTTL(cacheKey, CACHE_TTL.kline);
-  if (fresh) return fresh;
-
-  // 1. 腾讯
-  try {
-    const data = await fetchKLine(code, count);
-    return data;
-  } catch (e) {
-    console.warn(`腾讯K线失败 ${code}，降级东方财富...`);
-  }
-
-  // 2. 东方财富
-  try {
-    const data = await fetchEastmoneyKLine(code, count);
-    setCache(cacheKey, data);
-    return data;
-  } catch (e2) {
-    console.warn(`东方财富K线也失败 ${code}`);
-  }
-
-  // 3. 旧缓存
-  const stale = getCache(cacheKey);
-  if (stale) {
-    console.warn(`[离线模式] ${code} 使用旧K线数据`);
-    return stale;
-  }
-
-  throw new Error(`${code} 所有K线源均失败`);
-}
-
-// ============================================
 // 数据抓取（优化：并发控制 + 重试 + 批量报价）
 // ============================================
 // ---- 并发限制器 ----
@@ -551,7 +421,7 @@ async function fetchBasic(code) {
 // ---- 批量实时报价（新增） ----
 async function fetchQuotesBatch(codes) {
   if (!codes || codes.length === 0) return {};
-  const BATCH_SIZE = 20;
+  const BATCH_SIZE = 30; // 移动端30只/批
   const results = {};
 
   for (let i = 0; i < codes.length; i += BATCH_SIZE) {
@@ -560,16 +430,14 @@ async function fetchQuotesBatch(codes) {
     const url = `https://qt.gtimg.cn/q=${codeStr}`;
 
     try {
+      // 腾讯接口返回UTF-8，直接用text()
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
+      const timer = setTimeout(() => controller.abort(), 4000);
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timer);
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const buffer = await res.arrayBuffer();
-      const decoder = new TextDecoder('gbk');
-      const text = decoder.decode(buffer);
+      const text = await res.text();
 
       const lines = text.split('\n').filter(line => line.trim());
       for (const line of lines) {
@@ -595,44 +463,9 @@ async function fetchQuotesBatch(codes) {
           totalCap: parseFloat(fields[45]) || null,
         };
       }
+      console.log(`[报价] 腾讯成功 ${Object.keys(results).length}/${codes.length}`);
     } catch (e) {
-      console.warn(`批量报价失败 ${codeStr}:`, e.message);
-      // 单只降级拉取
-      for (const code of batch) {
-        try {
-          const singleUrl = `https://qt.gtimg.cn/q=${code}`;
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 4000);
-          const res = await fetch(singleUrl, { signal: controller.signal });
-          clearTimeout(timer);
-
-          if (!res.ok) continue;
-          const buffer = await res.arrayBuffer();
-          const decoder = new TextDecoder('gbk');
-          const text = decoder.decode(buffer);
-
-          const match = text.match(/v_([a-z]{2}\d{6})="([^"]*)"/);
-          if (!match) continue;
-          const fields = match[2].split('~');
-          if (fields.length < 33) continue;
-
-          results[code] = {
-            name: fields[1] || code,
-            price: parseFloat(fields[3]) || 0,
-            change: parseFloat(fields[31]) || 0,
-            changePercent: parseFloat(fields[32]) || 0,
-            volume: parseInt(fields[36]) || 0,
-            turnover: (parseFloat(fields[37]) || 0) * 10000,
-            high: parseFloat(fields[33]) || 0,
-            low: parseFloat(fields[34]) || 0,
-            open: parseFloat(fields[5]) || 0,
-            pe: parseFloat(fields[39]) || null,
-            pb: parseFloat(fields[46]) || null,
-            turnoverRate: parseFloat(fields[38]) || null,
-            totalCap: parseFloat(fields[45]) || null,
-          };
-        } catch (e2) { /* ignore single failure */ }
-      }
+      console.warn(`[报价] 腾讯失败 ${codeStr}:`, e.message);
     }
   }
   return results;
@@ -1741,7 +1574,7 @@ if (typeof module !== 'undefined' && module.exports) {
     fetchQuotesBatch, getCacheStats, lruCacheClean,
     analyzeMainForce, analyzeFundamentals,
     findStockByName, extractCodesFromText, STOCK_NAME_MAP,
-    fetchQuotesMulti, fetchKLineMulti, fetchSinaQuotes, fetchEastmoneyKLine,
+
   };
 }
 if (typeof window !== 'undefined') {
@@ -1759,8 +1592,8 @@ if (typeof window !== 'undefined') {
   window.analyzeFundamentals = analyzeFundamentals;
   window.findStockByName = findStockByName;
   window.extractCodesFromText = extractCodesFromText;
-  window.fetchQuotesMulti = fetchQuotesMulti;
-  window.fetchKLineMulti = fetchKLineMulti;
+
+
   // 首页列表需要用：信号计算 + 枢轴点
   window.summarize = summarize;
   window.calcPivots = calcPivots;

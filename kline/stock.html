@@ -872,8 +872,8 @@ async function initStock(code) {
   try {
     // 并行获取个股和大盘数据
     const [stockData, marketData] = await Promise.all([
-      fetchKLineMulti(code, 120),
-      fetchKLineMulti('sh000300', 120).catch(() => null)
+      fetchKLine(code, 120),
+      fetchKLine('sh000300', 120).catch(() => null)
     ]);
     data = stockData;
     if (marketData && marketData.length > 30) {

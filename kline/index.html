@@ -806,7 +806,7 @@
                 const codes = stocks.map(s => s.code);
                 // 1. 批量实时报价（1次请求）
                 let quotes = {};
-                try { quotes = await fetchQuotesMulti(codes); } catch (e) { console.warn(e); }
+                try { quotes = await fetchQuotesBatch(codes); } catch (e) { console.warn(e); }
 
                 // 先填充报价骨架
                 for (const s of stocks) {
@@ -857,7 +857,7 @@
 
                             // 缓存不足则网络拉取
                             if (!kline || kline.length < 60) {
-                                kline = await fetchKLineMulti(s.code, 120);
+                                kline = await fetchKLine(s.code, 120);
                                 fromCache = false;
                             }
 
@@ -1042,7 +1042,7 @@ function updateTimeDisplay() {
                 const codes = stocks.map(s => s.code);
                 // 1. 批量实时报价（1次请求）
                 let quotes = {};
-                try { quotes = await fetchQuotesMulti(codes); } catch (e) { console.warn(e); }
+                try { quotes = await fetchQuotesBatch(codes); } catch (e) { console.warn(e); }
 
                 // 先填充报价骨架
                 for (const s of stocks) {
@@ -1093,7 +1093,7 @@ function updateTimeDisplay() {
 
                             // 缓存不足则网络拉取
                             if (!kline || kline.length < 60) {
-                                kline = await fetchKLineMulti(s.code, 120);
+                                kline = await fetchKLine(s.code, 120);
                                 fromCache = false;
                             }
 
@@ -1479,7 +1479,7 @@ function updateTimeDisplay() {
             async function loadMarketData() {
                 try {
                     const codes = MARKET.map(toFullCode);
-                    mq = await fetchQuotesMulti(codes);
+                    mq = await fetchQuotesBatch(codes);
                     renderMarketTicker();
                 } catch (e) { console.warn('指数加载失败', e); }
             }
