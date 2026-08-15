@@ -892,6 +892,13 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
   // backtest 仅作展示，不参与信号生成（避免过拟合）
   const backtest = quickBacktest(closes, highs, lows, opens, volumes);
 
+  // 主力行为 & 基本面分析
+  const mainForce = analyzeMainForce(
+    data.map((d, i) => ({ close: d.close, open: d.open || d.close, high: d.high || d.close, low: d.low || d.close, volume: d.volume || 0 })),
+    basic
+  );
+  const fundamentals = analyzeFundamentals(basic);
+
   const tpSl = calcTakeProfitStopLoss(
       closes[last],
       pivots ? pivots.classic : null,
@@ -921,6 +928,8 @@ function summarize(closes, highs, lows, opens, volumes, pivots) {
     anomalyIdx,
     tpSl,
     backtest,
+    mainForce,
+    fundamentals,
   };
 }
 
@@ -1305,6 +1314,125 @@ function quantMetrics(closes, returns, marketCloses) {
 }
 
 // ============================================
+// 主力行为研判（新增）
+// ============================================
+function analyzeMainForce(kline, basic) {
+  const last = kline.length - 1;
+  const closes = kline.map(d => d.close);
+  const volumes = kline.map(d => d.volume || 0);
+  const vol5 = calcVolMA(volumes, 5);
+  const vol20 = calcVolMA(volumes, 20);
+  const obv = calcOBV(closes, volumes);
+  const obvInfo = obvTrend(obv, 5, 20);
+
+  let accumulation = 0, distribution = 0;
+  const recent = kline.slice(-20);
+  for (let i = 1; i < recent.length; i++) {
+    const d = recent[i];
+    const prev = recent[i-1];
+    const volRatio = d.volume / (vol20[Math.max(0, last - 20 + i)] || d.volume || 1);
+    if (d.close < d.open && volRatio < 0.8) accumulation += 1;
+    if (d.close > d.open && volRatio > 1.2 && d.close > prev.close) accumulation += 1.5;
+    if (d.close < d.open && volRatio > 1.5) distribution += 1.5;
+    if (Math.abs(d.close - d.open) / (d.open || 1) < 0.01 && volRatio > 1.5) distribution += 1;
+  }
+
+  const turnoverRate = basic?.turnover || 0;
+  const minPrice = Math.min(...closes.slice(-60));
+  const maxPrice = Math.max(...closes.slice(-60));
+  const pricePosition = maxPrice > minPrice ? (closes[last] - minPrice) / (maxPrice - minPrice) : 0.5;
+
+  let turnoverSignal = '中性';
+  if (pricePosition < 0.3 && turnoverRate > 5) turnoverSignal = '低位高换手·吸筹';
+  else if (pricePosition > 0.7 && turnoverRate > 10) turnoverSignal = '高位高换手·出货';
+  else if (turnoverRate < 1) turnoverSignal = '地量·观望';
+
+  const priceUp5d = closes[last] > closes[Math.max(0, last - 5)];
+  const obvUp5d = obvInfo.direction === 'up';
+  let divergence = '无背离';
+  if (priceUp5d && !obvUp5d) {
+    const priceUp20d = closes[last] > closes[Math.max(0, last - 20)];
+    divergence = priceUp20d ? '短期量价背离·警惕' : '中期量价背离·强警示';
+  }
+
+  let fundSignal = '';
+  if (basic?.mainInflow != null) {
+    const flowRatio = basic.mainInflow / (basic.turnover || 1);
+    if (basic.mainInflow > 0 && flowRatio > 0.1) fundSignal = '主力大幅流入';
+    else if (basic.mainInflow < 0 && flowRatio < -0.1) fundSignal = '主力大幅流出';
+    else if (basic.mainInflow > 0) fundSignal = '主力小幅流入';
+    else fundSignal = '主力小幅流出';
+  }
+
+  let behavior = '不明', confidence = 50;
+  if (accumulation > distribution * 1.5 && obvInfo.direction === 'up') {
+    behavior = '吸筹期'; confidence = 70 + Math.min(accumulation * 2, 20);
+  } else if (distribution > accumulation * 1.5 && obvInfo.direction === 'down') {
+    behavior = '出货期'; confidence = 70 + Math.min(distribution * 2, 20);
+  } else if (obvInfo.direction === 'up' && turnoverSignal.includes('吸筹')) {
+    behavior = '主力建仓'; confidence = 75;
+  } else if (obvInfo.direction === 'down' && turnoverSignal.includes('出货')) {
+    behavior = '主力派发'; confidence = 75;
+  } else if (turnoverSignal === '地量·观望') {
+    behavior = '洗盘/蓄势'; confidence = 60;
+  }
+
+  return {
+    behavior, confidence: Math.min(100, Math.round(confidence)),
+    accumulationScore: +accumulation.toFixed(1),
+    distributionScore: +distribution.toFixed(1),
+    turnoverSignal, divergence, fundSignal,
+    obvDirection: obvInfo.direction,
+  };
+}
+
+// ============================================
+// 基本面分析（新增）
+// ============================================
+function analyzeFundamentals(basic) {
+  if (!basic) return { rating: '数据不足', score: 0, details: [] };
+  const details = [];
+  let score = 50;
+
+  if (basic.pe != null) {
+    const pe = basic.pe;
+    if (pe < 0) { score -= 10; details.push({ item: 'PE(TTM)', value: pe, grade: '亏损', note: '净利润为负' }); }
+    else if (pe < 15) { score += 10; details.push({ item: 'PE(TTM)', value: pe, grade: '低估', note: '<15x' }); }
+    else if (pe < 30) { score += 5; details.push({ item: 'PE(TTM)', value: pe, grade: '合理', note: '15~30x' }); }
+    else if (pe < 50) { details.push({ item: 'PE(TTM)', value: pe, grade: '偏高', note: '30~50x' }); }
+    else { score -= 5; details.push({ item: 'PE(TTM)', value: pe, grade: '高估', note: '>50x' }); }
+  }
+  if (basic.pb != null) {
+    const pb = basic.pb;
+    if (pb < 1) { score += 5; details.push({ item: 'PB', value: pb, grade: '破净', note: '<1x' }); }
+    else if (pb < 3) { score += 3; details.push({ item: 'PB', value: pb, grade: '合理', note: '1~3x' }); }
+    else if (pb < 5) { details.push({ item: 'PB', value: pb, grade: '偏高', note: '3~5x' }); }
+    else { score -= 3; details.push({ item: 'PB', value: pb, grade: '高估', note: '>5x' }); }
+  }
+  if (basic.turnover != null) {
+    const tr = basic.turnover;
+    if (tr > 10) { details.push({ item: '换手率', value: tr, grade: '活跃', note: '>10%' }); }
+    else if (tr > 3) { details.push({ item: '换手率', value: tr, grade: '正常', note: '3~10%' }); }
+    else { details.push({ item: '换手率', value: tr, grade: '低迷', note: '<3%' }); }
+  }
+  if (basic.totalCap != null) {
+    const cap = basic.totalCap;
+    if (cap > 5000) { details.push({ item: '总市值', value: cap, grade: '大盘', note: '>5000亿' }); }
+    else if (cap > 500) { details.push({ item: '总市值', value: cap, grade: '中盘', note: '500~5000亿' }); }
+    else { details.push({ item: '总市值', value: cap, grade: '小盘', note: '<500亿' }); }
+  }
+
+  let rating = '中性';
+  if (score >= 80) rating = '优秀';
+  else if (score >= 65) rating = '良好';
+  else if (score >= 50) rating = '一般';
+  else if (score >= 35) rating = '偏弱';
+  else rating = '较差';
+
+  return { rating, score: Math.max(0, Math.min(100, score)), details, summary: rating + '（' + score + '分）' };
+}
+
+// ============================================
 // 导出（Node 和 浏览器）
 // ============================================
 if (typeof module !== 'undefined' && module.exports) {
@@ -1321,6 +1449,7 @@ if (typeof module !== 'undefined' && module.exports) {
     trendStrength, correlation,
     // 新增
     fetchQuotesBatch, getCacheStats, lruCacheClean,
+    analyzeMainForce, analyzeFundamentals,
   };
 }
 if (typeof window !== 'undefined') {
@@ -1334,6 +1463,8 @@ if (typeof window !== 'undefined') {
   window.fetchQuotesBatch = fetchQuotesBatch;
   window.getCacheStats = getCacheStats;
   window.lruCacheClean = lruCacheClean;
+  window.analyzeMainForce = analyzeMainForce;
+  window.analyzeFundamentals = analyzeFundamentals;
   // 首页列表需要用：信号计算 + 枢轴点
   window.summarize = summarize;
   window.calcPivots = calcPivots;

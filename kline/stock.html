@@ -740,7 +740,11 @@ function applyQuantToSignal(sum, qm) {
   if (v.bad) {
     if (sum.position > 30) {
       sum.position = 30;
-      warnings.push(`📉 量化战略差（夏普 ${v.sharpe.toFixed(2)} / 回撤 ${(v.mdd*100).toFixed(0)}%），仓位封顶 30%`);
+      let reason = '';
+      if (v.sharpe < 0) reason += `夏普${v.sharpe.toFixed(2)}<0 `;
+      if (v.mdd > 0.25) reason += `回撤${(v.mdd*100).toFixed(0)}%>25% `;
+      if (v.ir != null && v.ir < -0.5) reason += `IR${v.ir.toFixed(2)}<-0.5 `;
+      warnings.push(`📉 量化战略偏弱（${reason.trim() || '综合指标不佳'}），仓位封顶 30%`);
     }
     sum.confidence = Math.min(sum.confidence, 40);
   } else if (v.weak) {
@@ -1138,6 +1142,43 @@ function renderPage(data, sum, pivots, currentPrice, change, changePct, basic) {
           <div class="v" style="color:${sum.position>=50?'#e53e3e':sum.position<25?'#38a169':'#1a202c'}">${posLabel} ${sum.position}%</div>
         </div>
         <div class="vp-alert" id="vpAlert"></div>
+                <!-- 主力行为研判 -->
+        <div style="margin-top:10px;padding:10px 12px;background:#fffaf0;border-radius:8px;border-left:3px solid #ed8936;">
+          <div style="font-size:13px;font-weight:600;color:#2d3748;margin-bottom:6px;">🎯 主力行为研判</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="font-size:18px;font-weight:700;color:" + (sum.mainForce.behavior.indexOf('吸筹')>=0 || sum.mainForce.behavior.indexOf('建仓')>=0 ? '#38a169' : sum.mainForce.behavior.indexOf('出货')>=0 || sum.mainForce.behavior.indexOf('派发')>=0 ? '#e53e3e' : '#718096') + ";">" + sum.mainForce.behavior + "</span>
+            <span style="font-size:11px;color:#a0aec0;">置信度 " + sum.mainForce.confidence + "%</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:12px;color:#4a5568;">
+            <div>📊 " + sum.mainForce.turnoverSignal + "</div>
+            <div>📈 " + sum.mainForce.divergence + "</div>
+            <div>💰 " + (sum.mainForce.fundSignal || '资金流向暂无') + "</div>
+            <div>🌊 OBV: " + (sum.mainForce.obvDirection === 'up' ? '上行·资金流入' : '下行·资金流出') + "</div>
+          </div>
+        </div>
+        <!-- 基本面分析 -->
+        <div style="margin-top:10px;padding:10px 12px;background:#f0f9ff;border-radius:8px;border-left:3px solid #4299e1;">
+          <div style="font-size:13px;font-weight:600;color:#2d3748;margin-bottom:6px;">📋 基本面分析</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="font-size:18px;font-weight:700;color:" + (sum.fundamentals.score >= 65 ? '#38a169' : sum.fundamentals.score >= 50 ? '#d69e2e' : '#e53e3e') + ";">" + sum.fundamentals.rating + "</span>
+            <span style="font-size:12px;color:#4a5568;">" + sum.fundamentals.score + "分</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:6px;">
+            " + (function() {
+              if (!sum.fundamentals.details || sum.fundamentals.details.length === 0) {
+                return '<div style="grid-column:3;text-align:center;color:#a0aec0;font-size:12px;">暂无基本面数据</div>';
+              }
+              return sum.fundamentals.details.map(function(d) {
+                var v = typeof d.value === 'number' ? d.value.toFixed(2) : d.value;
+                var suffix = (d.item.indexOf('率') >= 0 || d.item.indexOf('增速') >= 0) ? '%' : '';
+                var goodGrades = ['优秀','高','良好','低估','破净'];
+                var badGrades = ['偏弱','低','下滑','亏损','高估'];
+                var color = goodGrades.indexOf(d.grade) >= 0 ? '#38a169' : badGrades.indexOf(d.grade) >= 0 ? '#e53e3e' : '#718096';
+                return '<div style="background:#fff;padding:6px 4px;border-radius:4px;text-align:center;"><div style="font-size:10px;color:#a0aec0;">' + d.item + '</div><div style="font-size:13px;font-weight:600;color:#2d3748;">' + v + suffix + '</div><div style="font-size:10px;color:' + color + ';">' + d.grade + '</div></div>';
+              }).join('');
+            })() + "
+          </div>
+        </div>
         <div class="risk-card"><span class="label">⚠ 风险提示</span>${riskHtml}</div>
         <div class="winrate-row">
           <div class="item"><span>买入胜率(回测 ${bt.lookback}日/持有${bt.holdDays}日)</span><span class="v ${wrClass}">${bt.buySamples ? (bt.buyWinRate*100).toFixed(0)+'%' : '—'}</span></div>

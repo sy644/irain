@@ -826,61 +826,74 @@
                             signal: '--', action: '' };
                     }
                 }
+                renderStockCards(stocks); // 先渲染报价（秒开）
 
-                // 2. 快路径：历史表有缓存的直接显示
-                let historySignals = [];
-                try { historySignals = HistoryTable.getWatchlist(); } catch (e) { console.warn('读取历史表失败', e); }
-                const signalMap = new Map(historySignals.map(h => [h.code, h]));
+                // 2. 信号计算：优先用历史缓存K线（和详情页完全一致的summarize逻辑）
+                const needCalc = stocks.filter(s => stockDataMap[s.code]?.price !== '--');
+                const CONCURRENCY = 3;
 
-                for (const s of stocks) {
-                    const hist = signalMap.get(s.code);
-                    if (hist && stockDataMap[s.code]) {
-                        stockDataMap[s.code].signal = hist.overall || '数据不足';
-                        stockDataMap[s.code].action = hist.action || '';
-                    }
-                }
-                renderStockCards(stocks); // 先渲染一轮（历史缓存的秒开）
+                for (let i = 0; i < needCalc.length; i += CONCURRENCY) {
+                    const batch = needCalc.slice(i, i + CONCURRENCY);
+                    await Promise.all(batch.map(async (s) => {
+                        try {
+                            let kline = null;
+                            let fromCache = false;
 
-                // 3. 慢路径 fallback：历史表没有的，并行拉 K线计算
-                const missing = stocks.filter(s => !signalMap.has(s.code) && stockDataMap[s.code]?.price !== '--');
-                if (missing.length > 0) {
-                    const CONCURRENCY = 3;
-                    for (let i = 0; i < missing.length; i += CONCURRENCY) {
-                        const batch = missing.slice(i, i + CONCURRENCY);
-                        await Promise.all(batch.map(async (s) => {
+                            // 先尝试从历史表读K线（避免网络请求）
                             try {
-                                const kline = await fetchKLine(s.code, 120);
-                                if (kline && kline.length > 20) {
-                                    const closes = kline.map(d => d.close);
-                                    let sig;
-                                    if (typeof window.summarize === 'function') {
-                                        const highs = kline.map(d => d.high);
-                                        const lows = kline.map(d => d.low);
-                                        const opens = kline.map(d => d.open);
-                                        const vols = kline.map(d => d.volume);
-                                        const prev = kline[kline.length - 2] || kline[kline.length - 1];
-                                        let pivots = null;
-                                        if (typeof window.calcPivots === 'function') {
-                                            pivots = window.calcPivots(prev.high, prev.low, prev.close);
-                                        }
-                                        sig = window.summarize(closes, highs, lows, opens, vols, pivots);
-                                        stockDataMap[s.code].signal = sig.overall;
-                                        stockDataMap[s.code].action = sig.action;
-                                    } else {
-                                        sig = simpleSignal(closes);
-                                        stockDataMap[s.code].signal = sig.overall;
-                                        stockDataMap[s.code].action = sig.action;
-                                    }
-                                } else {
-                                    stockDataMap[s.code].signal = '数据不足';
+                                const cached = HistoryTable.getRecent(s.code, 120);
+                                if (cached && cached.length >= 60) {
+                                    kline = cached.map(r => ({
+                                        date: r.date,
+                                        open: r.open,
+                                        high: r.high,
+                                        low: r.low,
+                                        close: r.close,
+                                        volume: r.volume,
+                                    }));
+                                    fromCache = true;
                                 }
-                            } catch (e) {
-                                console.warn(`信号计算失败 ${s.code}:`, e);
-                                stockDataMap[s.code].signal = '计算失败';
+                            } catch (e) { /* ignore */ }
+
+                            // 缓存不足则网络拉取
+                            if (!kline || kline.length < 60) {
+                                kline = await fetchKLine(s.code, 120);
+                                fromCache = false;
                             }
-                        }));
-                        renderStockCards(stocks); // 每批算完更新一次
-                    }
+
+                            if (kline && kline.length > 20) {
+                                const closes = kline.map(d => d.close);
+                                let sig;
+                                if (typeof window.summarize === 'function') {
+                                    const highs = kline.map(d => d.high);
+                                    const lows = kline.map(d => d.low);
+                                    const opens = kline.map(d => d.open);
+                                    const vols = kline.map(d => d.volume);
+                                    const prev = kline[kline.length - 2] || kline[kline.length - 1];
+                                    let pivots = null;
+                                    if (typeof window.calcPivots === 'function') {
+                                        pivots = window.calcPivots(prev.high, prev.low, prev.close);
+                                    }
+                                    sig = window.summarize(closes, highs, lows, opens, vols, pivots);
+                                    stockDataMap[s.code].signal = sig.overall;
+                                    stockDataMap[s.code].action = sig.action;
+                                } else {
+                                    sig = simpleSignal(closes);
+                                    stockDataMap[s.code].signal = sig.overall;
+                                    stockDataMap[s.code].action = sig.action;
+                                }
+                                if (fromCache) {
+                                    stockDataMap[s.code].signal += '·';
+                                }
+                            } else {
+                                stockDataMap[s.code].signal = '数据不足';
+                            }
+                        } catch (e) {
+                            console.warn(`信号计算失败 ${s.code}:`, e);
+                            stockDataMap[s.code].signal = '计算失败';
+                        }
+                    }));
+                    renderStockCards(stocks); // 每批算完更新一次
                 }
 
                 updateTimeDisplay();

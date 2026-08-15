@@ -148,36 +148,6 @@ function updateTrailingStop(position, tpSl) {
 }
 
 // ============================================
-// 9. OBV 复权调整（处理除权除息）
-// ============================================
-function adjustForExDividend(klineData) {
-  // 检测除权：相邻两天开盘价异常跳变
-  // 简单实现：若今开相对昨收偏离 > 8% 且 5 日内未再除权，按今日开盘/昨收 比例调整历史价格
-  const adjusted = klineData.map((d, i) => ({ ...d }));
-  for (let i = 1; i < adjusted.length; i++) {
-    if (i < 1) continue;
-    const prevClose = adjusted[i - 1].close;
-    const currOpen  = adjusted[i].open;
-    if (!prevClose || !currOpen) continue;
-    const ratio = currOpen / prevClose;
-    // 偏离 5%~15% 视为除权日（A 股涨跌停 10% 以内 + 分红/送股）
-    if (ratio < 0.85 || ratio > 1.15) {
-      // 将前 i 天的价格全部除以 ratio（按除权因子下调）
-      const factor = 1 / ratio;
-      for (let j = 0; j < i; j++) {
-        adjusted[j].open   *= factor;
-        adjusted[j].close  *= factor;
-        adjusted[j].high   *= factor;
-        adjusted[j].low    *= factor;
-        // 成交量按除权因子反向调整（送股后股数变多，量对应增加）
-        adjusted[j].volume *= ratio;
-      }
-    }
-  }
-  return adjusted;
-}
-
-// ============================================
 // 10. 大盘环境过滤器（可选）
 // ============================================
 async function checkMarketEnvironment(fetchKLine, marketCode = 'sh000300') {
@@ -276,13 +246,20 @@ function applyRiskLimits(signal, portfolio, limits = DEFAULT_RISK_LIMITS) {
       result.position = totalCap * 100;
     }
   }
-  // 4. 止损检查（仅对买入信号）
+  // 4. 止损检查（仅对买入信号）：太宽时自适应收紧，不强制清仓
   if (['买入', '强力买入', '左侧试探'].includes(signal.overall) && limits.stopLossRequired) {
     const slCheck = checkSingleLoss(signal.price, signal.tpSl && signal.tpSl.stopLoss, limits);
     if (!slCheck.ok) {
-      result.blocked = true;
-      result.blockReasons.push(slCheck.message);
-      result.position = 0;
+      if (slCheck.reason === 'STOP_LOSS_TOO_WIDE') {
+        // 自适应：收紧止损到允许范围，仓位按比例降低
+        const maxLossPrice = signal.price * (1 - limits.maxSingleLoss);
+        result.riskChecks.push(`止损过宽(${((slCheck.actualLoss)*100).toFixed(1)}%)，已自适应收紧至${(limits.maxSingleLoss*100).toFixed(0)}%`);
+        if (signal.tpSl) signal.tpSl.stopLoss = maxLossPrice;
+      } else {
+        result.blocked = true;
+        result.blockReasons.push(slCheck.message);
+        result.position = 0;
+      }
     }
   }
   // 5. 止损穿透告警
