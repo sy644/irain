@@ -446,7 +446,24 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
 
   // ===== 量价决策树(深度版,基于"健康量价结构") =====
   // 必须在 score 算完之后、分档之前执行,这样 vpDivergence 才能影响 overall
-  // 1) OBV 8日斜率(拉长窗口,避免单日波动误判)
+
+  // 0) 先算 OBV 累计序列(后续 OBV 位置判定需要)
+  const obvSeries = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    if (i === 0) { obvSeries[i] = 0; continue; }
+    if (closes[i] > closes[i - 1]) obvSeries[i] = obvSeries[i - 1] + vols[i];
+    else if (closes[i] < closes[i - 1]) obvSeries[i] = obvSeries[i - 1] - vols[i];
+    else obvSeries[i] = obvSeries[i - 1];
+  }
+  // OBV 当前位置(最近 3 日平均,平滑掉单日波动)
+  const obvCurrent = (obvSeries[n - 1] + obvSeries[n - 2] + obvSeries[n - 3]) / 3;
+  // OBV 近 20 日峰值
+  const obvPeak20 = Math.max(...obvSeries.slice(-20));
+  const obvTrough20 = Math.min(...obvSeries.slice(-20));
+  // OBV 位置比(0~1):当前 OBV 在近 20 日 OBV 区间所处的位置
+  const obvPosition20 = obvPeak20 > obvTrough20 ? (obvCurrent - obvTrough20) / (obvPeak20 - obvTrough20) : 0.5;
+
+  // 1) OBV 8日斜率(用于趋势判断,但不作为背离的唯一依据)
   let obvSlope8 = 0;
   if (n >= 9) {
     let cur = 0, past = 0;
@@ -486,10 +503,10 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
   // 配合价涨(priceUp1d)即可判定为放量上涨,不要求绝对巨量
   const isAboveAvgVol = lastVol > avgVol20 * 1.05 || vols[n - 2] > avgVol20 * 1.05 || vols[n - 3] > avgVol20 * 1.05;
 
-  // 4) 真背离:严格三件套 —— 价格创近 20 日新高/高位 + OBV 显著流出 + 价格上涨趋势
-  // 之所以加 "obvSlope8 < -0.05" 和 "pricePosition20 > 0.8" 是为了过滤"放量上涨中 OBV 微调"这种健康结构
-  const isStrongObvDown = obvSlope8 < -0.05;
-  const isTrueDivergence = priceSlope5 > 0.02 && isStrongObvDown && pricePosition20 > 0.8;
+  // 4) 真背离:严格"价高位 + OBV 低位" —— 价格创近 20 日新高但 OBV 远低于近 20 日峰值
+  // 这种情况下 OBV 斜率必然是负的(因为 OBV 离峰值差很多),所以不需要单独用 obvSlope8 判断
+  // obvPosition20 < 0.5 表示 OBV 在近 20 日区间中处于下半部,远低于峰值
+  const isTrueDivergence = priceSlope5 > 0.02 && pricePosition20 > 0.85 && obvPosition20 < 0.5;
 
   // 5) 缩量洗盘:从近期高点小幅回撤(2%~8%)+ 持续缩量
   const isShrinkingWash = pullbackFromHigh > 0.02 && pullbackFromHigh < 0.08 && isShrinkingVol && !priceUp1d;
@@ -522,24 +539,17 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
   }
 
   // ===== 7) 研判冲突裁决(后置层) =====
-  // 场景:底层 OBV 判定为"量价背离",但新增的"温和放量 + 价涨"研判也命中
-  //      → 说明这是"放量上涨中 OBV 累计微调"的健康结构,不是真背离
-  //      → 让新研判(健康结构)赢,覆盖前一个判定
-  if (vpDivergence && isAboveAvgVol && priceUp1d && priceSlope5 > 0.02 && !isStrongObvDown) {
-    // 4 个条件全满足才覆盖:温和放量 + 价涨 + 5日涨幅>2% + OBV 不是显著流出
+  // 场景:底层 OBV 判定为"量价背离",但 OBV 位置不在低位 → 说明这是"放量上涨中 OBV 累计微调"的健康结构
+  //      → 让"健康结构"赢,覆盖"假背离"判定
+  if (vpDivergence && obvPosition20 >= 0.5) {
+    // OBV 位置不在下半部(说明资金并未真正撤离) → 修正为放量上涨
     vpDivergence = false;
     vpScore = 1;
     vpLabel = '放量上涨';
     vpEvent = 'upTrend';
   }
-  // OBV 累计值(给 volGroup / obvInfo 用)
-  let obv = 0;
-  for (let i = 0; i < n; i++) {
-    if (i > 0) {
-      if (closes[i] > closes[i - 1]) obv += vols[i];
-      else if (closes[i] < closes[i - 1]) obv -= vols[i];
-    }
-  }
+  // OBV 累计值(给 volGroup / obvInfo 用)—— 直接复用 obvSeries 末值
+  const obv = obvSeries[n - 1];
   const obvDirection = isObvUp ? 'up' : (isObvDown ? 'down' : 'neutral');
   const volaRatio = avgVol20 > 0 ? avgVol5 / avgVol20 : 1;
 
