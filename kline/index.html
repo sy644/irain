@@ -238,7 +238,7 @@
         }
 
         /* ============================================================
-           🆕 持仓管理面板
+           🆕 持仓管理面板（含可用资金编辑、行业配置）
            ============================================================ */
         .portfolio-panel {
             background: #ffffff;
@@ -289,7 +289,7 @@
             display: block;
         }
 
-        /* 风控概览条 */
+        /* 风控概览条（含可编辑现金） */
         .risk-overview {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
@@ -327,6 +327,110 @@
             font-size: 11px;
             font-weight: 400;
             color: #718096;
+        }
+        /* 可编辑现金输入框 */
+        .ro-item .cash-edit {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .ro-item .cash-edit input {
+            width: 80px;
+            padding: 4px 6px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 700;
+            text-align: center;
+            background: #fff;
+            color: #1a202c;
+            outline: none;
+            transition: 0.15s;
+        }
+        .ro-item .cash-edit input:focus {
+            border-color: #3182ce;
+            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.12);
+        }
+        .ro-item .cash-edit .cash-save {
+            background: #3182ce;
+            color: #fff;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .ro-item .cash-edit .cash-save:hover {
+            background: #2b6cb0;
+        }
+
+        /* 行业配置区域 */
+        .sector-allocation {
+            background: #f7fafc;
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 14px;
+        }
+        .sector-allocation .sa-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .sector-allocation .sa-title .sa-hint {
+            font-weight: 400;
+            color: #a0aec0;
+            font-size: 10px;
+        }
+        .sector-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 12px;
+            border-bottom: 1px solid #edf2f7;
+        }
+        .sector-item:last-child {
+            border-bottom: 0;
+        }
+        .sector-item .s-name {
+            width: 70px;
+            font-weight: 500;
+            color: #2d3748;
+            flex-shrink: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sector-item .s-bar {
+            flex: 1;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .sector-item .s-bar .s-fill {
+            height: 100%;
+            border-radius: 4px;
+            background: #3182ce;
+            transition: width 0.3s;
+        }
+        .sector-item .s-value {
+            width: 60px;
+            text-align: right;
+            font-weight: 600;
+            color: #1a202c;
+            font-size: 11px;
+        }
+        .sector-empty {
+            color: #a0aec0;
+            font-size: 12px;
+            text-align: center;
+            padding: 10px 0;
         }
 
         /* 添加持仓表单 */
@@ -582,6 +686,17 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+        .card-left .name .sector-tag {
+            display: inline-block;
+            font-size: 9px;
+            font-weight: 600;
+            background: #ebf8ff;
+            color: #2b6cb0;
+            padding: 0 8px;
+            border-radius: 30px;
+            margin-left: 6px;
+            vertical-align: middle;
         }
         .card-left .code {
             font-size: 11px;
@@ -988,6 +1103,17 @@
             .risk-overview {
                 grid-template-columns: repeat(3, 1fr);
             }
+            .sector-item .s-name {
+                width: 50px;
+            }
+            .sector-item .s-value {
+                width: 45px;
+                font-size: 10px;
+            }
+            .ro-item .cash-edit input {
+                width: 60px;
+                font-size: 12px;
+            }
         }
         @media (max-width: 380px) {
             .pos-item {
@@ -1148,7 +1274,7 @@
         </div>
 
         <!-- ============================================================
-        🆕 持仓管理面板
+        🆕 持仓管理面板（含可用资金编辑、行业配置）
         ============================================================ -->
         <div class="portfolio-panel" id="portfolioPanel">
             <div class="panel-header" id="panelToggle">
@@ -1159,7 +1285,7 @@
                 <span class="toggle-icon" id="toggleIcon">▼</span>
             </div>
             <div class="panel-body" id="panelBody">
-                <!-- 风控概览 -->
+                <!-- 风控概览（含可编辑现金） -->
                 <div class="risk-overview" id="riskOverview">
                     <div class="ro-item">
                         <div class="ro-label">总资产</div>
@@ -1171,7 +1297,12 @@
                     </div>
                     <div class="ro-item">
                         <div class="ro-label">可用现金</div>
-                        <div class="ro-value" id="roCash">--</div>
+                        <div class="ro-value">
+                            <div class="cash-edit">
+                                <input type="number" id="cashInput" step="100" min="0" value="100000">
+                                <button class="cash-save" id="cashSave">保存</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="ro-item">
                         <div class="ro-label">最大回撤</div>
@@ -1181,6 +1312,15 @@
                         <div class="ro-label">风控状态</div>
                         <div class="ro-value" id="roRiskStatus">--</div>
                     </div>
+                </div>
+
+                <!-- 行业配置 -->
+                <div class="sector-allocation" id="sectorAllocation">
+                    <div class="sa-title">
+                        <span>📊 资金行业分配</span>
+                        <span class="sa-hint">超配 / 低配建议</span>
+                    </div>
+                    <div id="sectorList"><div class="sector-empty">暂无持仓，请添加</div></div>
                 </div>
 
                 <!-- 添加持仓表单 -->
@@ -1249,7 +1389,97 @@
 
     <script>
         // ============================================================
-        // 1. 持仓数据管理（独立模块）
+        // 0. 行业映射表（内置常见股票行业）
+        // ============================================================
+        const SECTOR_MAP = {
+            // 根据股票代码或名称匹配
+            'sh600519': '消费',
+            'sz000001': '银行',
+            'sz300750': '新能源',
+            'sh000001': '指数',
+            'sz399001': '指数',
+            'sz002594': '新能源',
+            'sz000858': '消费',
+            'sh600036': '银行',
+            'sh601318': '保险',
+            'sh600030': '证券',
+            'sz300059': '证券',
+            'sh601012': '新能源',
+            'sh603259': '医药',
+            'sz300760': '医药',
+            'sz002415': '科技',
+            'sz000333': '家电',
+            'sz000651': '家电',
+            'sh600276': '医药',
+            'sh600887': '消费',
+            'sh603288': '消费',
+            'sh601888': '消费',
+            'sz300750': '新能源',
+            'sz002475': '科技',
+            'sz000725': '科技',
+            'sh601138': '科技',
+            'sh601899': '有色',
+            'sh600900': '电力',
+            'sh601166': '银行',
+            'sh600000': '银行',
+            'sh600016': '银行',
+            'sh601169': '银行',
+            'sh600919': '银行',
+            'sh601229': '银行',
+            'sz002142': '银行',
+            'sh600926': '银行',
+            'sh601009': '银行',
+            'sh601838': '银行',
+            'sh601577': '银行',
+            'sz002966': '银行',
+            'sh601665': '银行',
+            'sh601187': '银行',
+            'sh601963': '银行',
+            'sh601997': '银行',
+            'sz002936': '银行',
+            'sz002948': '银行',
+            'sh600928': '银行',
+            'sz002958': '银行',
+            'sh601860': '银行',
+            'sh601128': '银行',
+            'sh600908': '银行',
+            'sz002807': '银行',
+            'sz002839': '银行',
+            'sh603323': '银行',
+            'sh601528': '银行',
+            // 用户截图中的股票
+            'sz002340': '环保',
+            'sz300102': '科技',
+            'sh000636': '指数', // 实际是深证成指？暂设指数
+            'sh600879': '军工',
+            'sh600584': '科技',
+            'sz301313': '传媒',
+            // 常见ETF
+            'sh510300': '指数',
+            'sh510050': '指数',
+            'sz159919': '指数',
+            'sh588000': '指数',
+            // 可以继续扩展
+        };
+
+        // 获取股票行业
+        function getSector(code) {
+            if (SECTOR_MAP[code]) return SECTOR_MAP[code];
+            // 根据代码前缀猜测
+            const num = code.replace(/^[a-z]+/, '');
+            if (num.startsWith('000') || num.startsWith('600') || num.startsWith('601') || num.startsWith('603') || num
+                .startsWith('605')) {
+                if (num.startsWith('600') && !SECTOR_MAP[code]) return '综合';
+                if (num.startsWith('000') && !SECTOR_MAP[code]) return '综合';
+                return '综合';
+            }
+            if (num.startsWith('300') || num.startsWith('688')) return '科技';
+            if (num.startsWith('002') || num.startsWith('003')) return '中小板';
+            return '其他';
+        }
+
+        // ============================================================
+        // 1. 持仓数据管理（扩展：支持现金编辑）
         // ============================================================
         const PORTFOLIO_KEY = 'portfolio_v1';
 
@@ -1259,15 +1489,26 @@
                 if (!raw) return { positions: [], cash: 100000, equity: 100000, peakEquity: 100000 };
                 const p = JSON.parse(raw);
                 if (!p.positions) p.positions = [];
-                if (!p.cash) p.cash = 100000;
-                if (!p.equity) p.equity = 100000;
-                if (!p.peakEquity) p.peakEquity = p.equity;
+                if (typeof p.cash !== 'number') p.cash = 100000;
+                if (typeof p.equity !== 'number') p.equity = 100000;
+                if (typeof p.peakEquity !== 'number') p.peakEquity = p.equity;
                 return p;
             } catch { return { positions: [], cash: 100000, equity: 100000, peakEquity: 100000 }; }
         }
 
         function savePortfolio(portfolio) {
             localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(portfolio));
+        }
+
+        // 更新现金
+        function updateCash(newCash) {
+            const portfolio = loadPortfolio();
+            if (newCash < 0) return false;
+            portfolio.cash = newCash;
+            portfolio.equity = portfolio.positions.reduce((s, p) => s + (p.marketValue || 0), 0) + newCash;
+            if (portfolio.equity > portfolio.peakEquity) portfolio.peakEquity = portfolio.equity;
+            savePortfolio(portfolio);
+            return true;
         }
 
         function getCurrentPrice(code) {
@@ -1431,7 +1672,28 @@
         }
 
         // ============================================================
-        // 2. 全局状态
+        // 2. 行业配置计算
+        // ============================================================
+        function calcSectorAllocation(portfolio) {
+            const sectorMap = {};
+            let totalValue = 0;
+            for (const pos of portfolio.positions) {
+                const mv = pos.marketValue || 0;
+                if (mv <= 0) continue;
+                const sector = getSector(pos.code);
+                if (!sectorMap[sector]) sectorMap[sector] = 0;
+                sectorMap[sector] += mv;
+                totalValue += mv;
+            }
+            if (totalValue === 0) return { sectors: [], totalValue: 0 };
+            const sorted = Object.entries(sectorMap)
+                .map(([name, value]) => ({ name, value, pct: (value / totalValue) * 100 }))
+                .sort((a, b) => b.value - a.value);
+            return { sectors: sorted, totalValue };
+        }
+
+        // ============================================================
+        // 3. 全局状态
         // ============================================================
         let stockDataMap = {};
         let countdownSec = 60;
@@ -1456,7 +1718,7 @@
         }
 
         // ============================================================
-        // 3. 工具函数
+        // 4. 工具函数
         // ============================================================
         function toast(msg) {
             const el = document.createElement('div');
@@ -1474,10 +1736,9 @@
         }
 
         // ============================================================
-        // 4. 增强 K 线获取（双源 + 缓存）
+        // 5. 增强 K 线获取（双源 + 缓存）
         // ============================================================
         async function fetchKLine(code, count = 120) {
-            // 1. 尝试从 HistoryTable 缓存读取（如果有）
             try {
                 if (window.HistoryTable && typeof window.HistoryTable.getRecent === 'function') {
                     const cached = window.HistoryTable.getRecent(code, count);
@@ -1495,7 +1756,6 @@
                 }
             } catch (e) { /* 忽略 */ }
 
-            // 2. 主接口（腾讯）
             const url =
                 `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${encodeURIComponent(code)},day,,,${count},qfq`;
             const controller = new AbortController();
@@ -1518,7 +1778,6 @@
                     low: +row[4],
                     volume: +row[5],
                 })).filter(r => r.date && !isNaN(r.open));
-                // 存入缓存
                 try {
                     if (window.HistoryTable && typeof window.HistoryTable.appendRows === 'function') {
                         const rows = result.map(k => ({
@@ -1540,8 +1799,6 @@
             } catch (err) {
                 clearTimeout(timeout);
                 console.warn(`[K线] ${code} 主接口失败，尝试备用源...`, err.message);
-
-                // 3. 备用接口（新浪）
                 try {
                     const backupUrl =
                         `https://quotes.sina.cn/cn/api/json_v2.php/IFengService.getKLineData?symbol=${code}&scale=240&ma=no&datalen=${count}`;
@@ -1560,8 +1817,6 @@
                     return result2;
                 } catch (err2) {
                     console.warn(`[K线] ${code} 备用接口也失败`, err2.message);
-
-                    // 4. 最后尝试 localStorage 旧缓存
                     try {
                         const cacheKey = `kline_${code}_${count}`;
                         const raw = localStorage.getItem(cacheKey);
@@ -1579,7 +1834,7 @@
         }
 
         // ============================================================
-        // 5. 信号计算（与之前相同，但优化错误提示）
+        // 6. 信号计算（简化版）
         // ============================================================
         function simpleSignal(closes) {
             if (closes.length < 20) {
@@ -1641,7 +1896,7 @@
         }
 
         // ============================================================
-        // 6. 排序核心
+        // 7. 排序核心
         // ============================================================
         function getSignalGroup(signal) {
             const buySignals = ['强力买入', '买入', '左侧试探', '超卖区'];
@@ -1685,7 +1940,7 @@
         }
 
         // ============================================================
-        // 7. 核心刷新与渲染（包含增强错误处理）
+        // 8. 核心刷新与渲染
         // ============================================================
         async function fetchQuotesBatch(codes) {
             if (!codes || codes.length === 0) return {};
@@ -1827,7 +2082,7 @@
         }
 
         // ============================================================
-        // 8. 渲染股票卡片（含持仓标签）
+        // 9. 渲染股票卡片（含行业标签）
         // ============================================================
         function renderStockCards(stocks) {
             const sorted = sortStocks(stocks);
@@ -1872,6 +2127,10 @@
                 const posTag = hasPos ?
                     `<span class="pos-tag has-pos">📊 ${pos.shares}股 ${pos.profitPct !== undefined ? (pos.profitPct > 0 ? '+' : '') + pos.profitPct.toFixed(1) + '%' : ''}</span>` :
                     `<span class="pos-tag no-pos">无持仓</span>`;
+
+                // 行业标签
+                const sector = getSector(s.code);
+                const sectorTag = `<span class="sector-tag">${sector}</span>`;
 
                 let badgeClass = 'badge-data';
                 let displayText = signal;
@@ -1934,7 +2193,7 @@
                         <div class="hold-progress"><span class="progress-text">松开取消</span></div>
                         <div class="card-main">
                             <div class="card-left">
-                                <div class="name">${s.name} ${posTag}</div>
+                                <div class="name">${s.name} ${sectorTag} ${posTag}</div>
                                 <div class="code">${s.code.toUpperCase()}</div>
                             </div>
                             <div class="card-price">${priceDisplay}</div>
@@ -1985,7 +2244,7 @@
         }
 
         // ============================================================
-        // 9. 长按删除（同原逻辑）
+        // 10. 长按删除（同原逻辑）
         // ============================================================
         function bindLongPressDelete(container) {
             const LONG_PRESS_MS = 700;
@@ -2063,7 +2322,7 @@
         }
 
         // ============================================================
-        // 10. 持仓面板渲染
+        // 11. 持仓面板渲染（含行业配置）
         // ============================================================
         function renderPortfolioPanel() {
             const portfolio = refreshPortfolioPrices();
@@ -2080,7 +2339,9 @@
                 stats.totalPosPct > limits.maxTotalPosition * 100 ? ' bad' :
                 stats.totalPosPct > limits.maxTotalPosition * 100 * 0.85 ? ' warn' : ' good'
             );
-            document.getElementById('roCash').textContent = '¥' + (stats.cash || 0).toFixed(0);
+            // 现金输入框
+            const cashInput = document.getElementById('cashInput');
+            cashInput.value = portfolio.cash || 0;
             document.getElementById('roDrawdown').textContent = stats.drawdown.toFixed(1) + '%';
             document.getElementById('roDrawdown').className = 'ro-value' + (
                 stats.drawdown > limits.maxDrawdown * 100 * 0.7 ? ' bad' :
@@ -2102,6 +2363,7 @@
                 statusEl.className = 'ro-value good';
             }
 
+            // 持仓列表
             const listEl = document.getElementById('posList');
             if (!portfolio.positions.length) {
                 listEl.innerHTML = `<div class="pos-empty">暂无持仓，请添加</div>`;
@@ -2157,6 +2419,7 @@
                 });
             }
 
+            // 仓位汇总条
             const fill = document.getElementById('psFill');
             const pct = Math.min(stats.totalPosPct, 100);
             fill.style.width = pct + '%';
@@ -2166,12 +2429,46 @@
             );
             document.getElementById('psValue').textContent = pct.toFixed(1) + '%';
 
+            // 行业配置
+            renderSectorAllocation(portfolio);
+
             const stocks = window.loadStocks ? window.loadStocks() : [];
             renderStockCards(stocks);
         }
 
         // ============================================================
-        // 11. 持仓面板交互
+        // 12. 行业配置渲染
+        // ============================================================
+        function renderSectorAllocation(portfolio) {
+            const container = document.getElementById('sectorList');
+            const result = calcSectorAllocation(portfolio);
+            if (result.totalValue === 0 || result.sectors.length === 0) {
+                container.innerHTML = `<div class="sector-empty">暂无持仓，请添加</div>`;
+                return;
+            }
+
+            // 建议：超配（持仓占比 > 行业平均？简单提示）
+            const avgPct = 100 / result.sectors.length;
+            let html = '';
+            for (const s of result.sectors) {
+                const isOver = s.pct > avgPct * 1.2;
+                const isUnder = s.pct < avgPct * 0.8;
+                const hint = isOver ? '🔺超配' : isUnder ? '🔻低配' : '⚖️均衡';
+                const color = isOver ? '#e53e3e' : isUnder ? '#38a169' : '#718096';
+                html += `
+                    <div class="sector-item">
+                        <span class="s-name">${s.name}</span>
+                        <div class="s-bar"><div class="s-fill" style="width:${s.pct}%;background:${color};"></div></div>
+                        <span class="s-value">${s.pct.toFixed(1)}%</span>
+                        <span style="font-size:10px;color:${color};min-width:40px;">${hint}</span>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        // ============================================================
+        // 13. 持仓面板交互
         // ============================================================
         let panelOpen = false;
 
@@ -2203,7 +2500,25 @@
         });
 
         // ============================================================
-        // 12. 添加持仓逻辑
+        // 14. 现金编辑
+        // ============================================================
+        document.getElementById('cashSave').addEventListener('click', () => {
+            const input = document.getElementById('cashInput');
+            const val = parseFloat(input.value);
+            if (isNaN(val) || val < 0) {
+                toast('请输入有效金额');
+                return;
+            }
+            if (updateCash(val)) {
+                toast('✅ 现金已更新');
+                renderPortfolioPanel();
+            } else {
+                toast('更新失败');
+            }
+        });
+
+        // ============================================================
+        // 15. 添加持仓逻辑
         // ============================================================
         function populateStockSelect() {
             const select = document.getElementById('posStockSelect');
@@ -2275,7 +2590,7 @@
         });
 
         // ============================================================
-        // 13. 编辑持仓弹窗
+        // 16. 编辑持仓弹窗
         // ============================================================
         let editingCode = null;
 
@@ -2335,7 +2650,7 @@
         });
 
         // ============================================================
-        // 14. 添加股票（复用原有）
+        // 17. 添加股票（复用原有）
         // ============================================================
         document.getElementById('addBtn').addEventListener('click', () => {
             const input = document.getElementById('newStockInput').value.trim();
@@ -2361,7 +2676,7 @@
         });
 
         // ============================================================
-        // 15. OCR 识别（保留原功能）
+        // 18. OCR 识别（保留原功能）
         // ============================================================
         const ocrBtn = document.getElementById('ocrBtn');
         const ocrFile = document.getElementById('ocrFile');
@@ -2481,7 +2796,7 @@
         }
 
         // ============================================================
-        // 16. 指数 ticker
+        // 19. 指数 ticker
         // ============================================================
         async function loadMarketData() {
             try {
@@ -2515,7 +2830,7 @@
         }
 
         // ============================================================
-        // 17. 定时器
+        // 20. 定时器
         // ============================================================
         function updateCdown() {
             document.getElementById('countdown').textContent = countdownSec + 's↻';
@@ -2527,7 +2842,7 @@
         }, 1000);
 
         // ============================================================
-        // 18. 错误兜底
+        // 21. 错误兜底
         // ============================================================
         function _renderError(e) {
             try {
@@ -2544,7 +2859,7 @@
         window.addEventListener('unhandledrejection', (ev) => _renderError(ev.reason));
 
         // ============================================================
-        // 19. 暴露到全局
+        // 22. 暴露到全局
         // ============================================================
         window.stockDataMap = stockDataMap;
         window.loadPortfolio = loadPortfolio;
@@ -2556,13 +2871,13 @@
         window.calcPortfolioStats = calcPortfolioStats;
         window.getRiskAdvice = getRiskAdvice;
         window.renderPortfolioPanel = renderPortfolioPanel;
-        window.fetchKLine = fetchKLine; // 供其他模块调用
+        window.fetchKLine = fetchKLine;
+        window.getSector = getSector;
 
         // ============================================================
-        // 20. 初始化
+        // 23. 初始化
         // ============================================================
         window.addEventListener('load', () => {
-            // 确保基础函数存在
             if (typeof loadStocks === 'undefined') {
                 window.loadStocks = function() {
                     try {
@@ -2631,8 +2946,8 @@
             window.__riskLimits = DEFAULT_RISK_LIMITS;
         }
 
-        console.log('📊 智能参谋已启动 · 持仓管理 + 风控联动 · 增强K线获取');
-        console.log('💡 提示：在自选股页面管理持仓，风控参数在个股详情页设置');
+        console.log('📊 智能参谋已启动 · 持仓管理 + 风控联动 + 行业配置');
+        console.log('💡 支持编辑可用现金、查看行业分配与超低配建议');
     </script>
 </body>
 </html>
