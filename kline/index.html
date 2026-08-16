@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>自选股 · 智能参谋</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js">
     </script>
@@ -334,11 +334,11 @@
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
+            align-items: center;
             background: #f7fafc;
             border-radius: 12px;
             padding: 12px 14px;
             margin-bottom: 14px;
-            align-items: center;
         }
         .add-pos-form select,
         .add-pos-form input {
@@ -1249,7 +1249,7 @@
 
     <script>
         // ============================================================
-        // 1. 持仓数据管理（扩展 app.js 功能）
+        // 1. 持仓数据管理（独立模块）
         // ============================================================
         const PORTFOLIO_KEY = 'portfolio_v1';
 
@@ -1258,7 +1258,6 @@
                 const raw = localStorage.getItem(PORTFOLIO_KEY);
                 if (!raw) return { positions: [], cash: 100000, equity: 100000, peakEquity: 100000 };
                 const p = JSON.parse(raw);
-                // 兼容旧数据
                 if (!p.positions) p.positions = [];
                 if (!p.cash) p.cash = 100000;
                 if (!p.equity) p.equity = 100000;
@@ -1271,25 +1270,20 @@
             localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(portfolio));
         }
 
-        // 获取单只股票的最新价格（从 stockDataMap 或 fetch）
         function getCurrentPrice(code) {
-            // 先从 stockDataMap 获取
             if (window.stockDataMap && window.stockDataMap[code] && window.stockDataMap[code].price) {
                 return window.stockDataMap[code].price;
             }
             return null;
         }
 
-        // 更新持仓的市值和盈亏
         function refreshPortfolioPrices() {
             const portfolio = loadPortfolio();
             const stocks = window.loadStocks ? window.loadStocks() : [];
             let totalMv = 0;
             for (const pos of portfolio.positions) {
-                // 尝试从 stockDataMap 获取价格
                 let price = getCurrentPrice(pos.code);
                 if (!price) {
-                    // 从自选股列表中找
                     const s = stocks.find(st => st.code === pos.code);
                     if (s && window.stockDataMap && window.stockDataMap[s.code]) {
                         price = window.stockDataMap[s.code].price;
@@ -1316,22 +1310,18 @@
             return portfolio;
         }
 
-        // 添加持仓
         function addPosition(code, shares, avgCost, stopLoss) {
             if (!code || !shares || shares <= 0 || !avgCost || avgCost <= 0) {
                 return { success: false, message: '请填写完整信息' };
             }
             const portfolio = loadPortfolio();
-            // 检查是否已存在
             const existing = portfolio.positions.find(p => p.code === code);
             if (existing) {
-                // 合并：加权平均成本
                 const totalShares = existing.shares + shares;
                 const totalCost = existing.shares * existing.avgCost + shares * avgCost;
                 existing.shares = totalShares;
                 existing.avgCost = totalCost / totalShares;
                 if (stopLoss && stopLoss > 0) existing.stopLoss = stopLoss;
-                // 保留 highWater
                 if (!existing.highWater) existing.highWater = existing.avgCost;
             } else {
                 portfolio.positions.push({
@@ -1351,7 +1341,6 @@
             return { success: true, portfolio };
         }
 
-        // 更新持仓
         function updatePosition(code, shares, avgCost, stopLoss) {
             const portfolio = loadPortfolio();
             const pos = portfolio.positions.find(p => p.code === code);
@@ -1365,7 +1354,6 @@
             return { success: true, portfolio };
         }
 
-        // 删除持仓
         function removePosition(code) {
             const portfolio = loadPortfolio();
             portfolio.positions = portfolio.positions.filter(p => p.code !== code);
@@ -1374,13 +1362,11 @@
             return portfolio;
         }
 
-        // 计算持仓统计（用于风控）
         function calcPortfolioStats(portfolio) {
             const totalMv = portfolio.positions.reduce((s, p) => s + (p.marketValue || 0), 0);
             const equity = totalMv + portfolio.cash;
             const totalPosPct = equity > 0 ? (totalMv / equity) * 100 : 0;
             const drawdown = portfolio.peakEquity > 0 ? ((portfolio.peakEquity - equity) / portfolio.peakEquity) * 100 : 0;
-
             const stats = {
                 totalMv,
                 equity,
@@ -1389,7 +1375,6 @@
                 totalPosPct,
                 drawdown,
                 positionCount: portfolio.positions.length,
-                // 单标的最大仓位
                 maxSinglePct: 0,
                 maxSingleCode: null,
             };
@@ -1403,49 +1388,37 @@
             return stats;
         }
 
-        // 获取风控建议（基于当前持仓和风控参数）
         function getRiskAdvice(portfolio, limits) {
             const stats = calcPortfolioStats(portfolio);
             const advices = [];
             const warnings = [];
             const blocks = [];
-
-            // 1. 总仓位检查
             const maxTotal = limits.maxTotalPosition * 100;
             if (stats.totalPosPct > maxTotal) {
                 warnings.push(`总仓位 ${stats.totalPosPct.toFixed(0)}% 超过上限 ${maxTotal.toFixed(0)}%，建议减仓`);
             } else if (stats.totalPosPct > maxTotal * 0.85) {
                 advices.push(`总仓位 ${stats.totalPosPct.toFixed(0)}% 接近上限 ${maxTotal.toFixed(0)}%，谨慎加仓`);
             }
-
-            // 2. 单标仓位检查
             const maxSingle = limits.maxSinglePosition * 100;
             if (stats.maxSinglePct > maxSingle) {
                 warnings.push(`单标 ${stats.maxSingleCode} 仓位 ${stats.maxSinglePct.toFixed(0)}% 超过上限 ${maxSingle.toFixed(0)}%，建议减仓`);
             }
-
-            // 3. 回撤检查
             if (stats.drawdown > limits.maxDrawdown * 100) {
                 blocks.push(`账户回撤 ${stats.drawdown.toFixed(1)}% 超过熔断线 ${(limits.maxDrawdown*100).toFixed(0)}%，强制清仓`);
             } else if (stats.drawdown > limits.maxDrawdown * 100 * 0.7) {
                 warnings.push(`账户回撤 ${stats.drawdown.toFixed(1)}%，接近熔断线，注意风险`);
             }
-
-            // 4. 现金保留
             const cashPct = stats.equity > 0 ? (stats.cash / stats.equity) * 100 : 0;
             const minCash = limits.minCashReserve * 100;
             if (cashPct < minCash) {
                 warnings.push(`现金比例 ${cashPct.toFixed(0)}% 低于保留线 ${minCash.toFixed(0)}%，建议补充现金`);
             }
-
-            // 5. 止损检查
             for (const p of portfolio.positions) {
                 if (p.stopLoss && p.stopLoss > 0 && p.currentPrice && p.currentPrice <= p.stopLoss) {
                     const lossPct = ((p.currentPrice - p.stopLoss) / p.currentPrice) * 100;
                     warnings.push(`${p.code} 触发止损线 (现价 ${p.currentPrice.toFixed(2)} ≤ 止损 ${p.stopLoss.toFixed(2)})，建议执行止损`);
                 }
             }
-
             return {
                 stats,
                 advices,
@@ -1501,11 +1474,116 @@
         }
 
         // ============================================================
-        // 4. 信号计算（与 index.html 一致）
+        // 4. 增强 K 线获取（双源 + 缓存）
+        // ============================================================
+        async function fetchKLine(code, count = 120) {
+            // 1. 尝试从 HistoryTable 缓存读取（如果有）
+            try {
+                if (window.HistoryTable && typeof window.HistoryTable.getRecent === 'function') {
+                    const cached = window.HistoryTable.getRecent(code, count);
+                    if (cached && cached.length >= 60) {
+                        console.log(`[缓存] ${code} 使用历史表数据`);
+                        return cached.map(r => ({
+                            date: r.date,
+                            open: r.open,
+                            close: r.close,
+                            high: r.high,
+                            low: r.low,
+                            volume: r.volume,
+                        }));
+                    }
+                }
+            } catch (e) { /* 忽略 */ }
+
+            // 2. 主接口（腾讯）
+            const url =
+                `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${encodeURIComponent(code)},day,,,${count},qfq`;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 6000);
+
+            try {
+                const res = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeout);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                if (data.code !== 0) throw new Error('接口返回错误');
+                const key = Object.keys(data.data)[0];
+                const arr = (data.data[key] && (data.data[key].qfqday || data.data[key].day)) || [];
+                if (!arr.length) throw new Error('无数据');
+                const result = arr.map(row => ({
+                    date: row[0],
+                    open: +row[1],
+                    close: +row[2],
+                    high: +row[3],
+                    low: +row[4],
+                    volume: +row[5],
+                })).filter(r => r.date && !isNaN(r.open));
+                // 存入缓存
+                try {
+                    if (window.HistoryTable && typeof window.HistoryTable.appendRows === 'function') {
+                        const rows = result.map(k => ({
+                            date: k.date,
+                            code: code,
+                            name: code,
+                            open: k.open,
+                            high: k.high,
+                            low: k.low,
+                            close: k.close,
+                            volume: k.volume,
+                            change: 0,
+                            changePct: 0,
+                        }));
+                        window.HistoryTable.appendRows(rows);
+                    }
+                } catch (e) {}
+                return result;
+            } catch (err) {
+                clearTimeout(timeout);
+                console.warn(`[K线] ${code} 主接口失败，尝试备用源...`, err.message);
+
+                // 3. 备用接口（新浪）
+                try {
+                    const backupUrl =
+                        `https://quotes.sina.cn/cn/api/json_v2.php/IFengService.getKLineData?symbol=${code}&scale=240&ma=no&datalen=${count}`;
+                    const res2 = await fetch(backupUrl, { signal: AbortSignal.timeout(5000) });
+                    if (!res2.ok) throw new Error('备用接口失败');
+                    const data2 = await res2.json();
+                    if (!data2 || !data2.length) throw new Error('备用数据为空');
+                    const result2 = data2.map(row => ({
+                        date: row.day,
+                        open: +row.open,
+                        close: +row.close,
+                        high: +row.high,
+                        low: +row.low,
+                        volume: +row.volume || 0,
+                    }));
+                    return result2;
+                } catch (err2) {
+                    console.warn(`[K线] ${code} 备用接口也失败`, err2.message);
+
+                    // 4. 最后尝试 localStorage 旧缓存
+                    try {
+                        const cacheKey = `kline_${code}_${count}`;
+                        const raw = localStorage.getItem(cacheKey);
+                        if (raw) {
+                            const item = JSON.parse(raw);
+                            if (Date.now() - item.timestamp < 24 * 60 * 60 * 1000) {
+                                console.log(`[K线] ${code} 使用 localStorage 缓存`);
+                                return item.data;
+                            }
+                        }
+                    } catch (e) {}
+                    throw new Error(`无法获取 ${code} 的K线数据，请检查网络`);
+                }
+            }
+        }
+
+        // ============================================================
+        // 5. 信号计算（与之前相同，但优化错误提示）
         // ============================================================
         function simpleSignal(closes) {
             if (closes.length < 20) {
-                return { overall: '数据不足', action: '等待更多K线', position: 0, confidence: 0 };
+                return { overall: '数据不足', action: 'K线不足，无法计算', position: 0, confidence: 0 };
             }
             const n = closes.length;
             const ma5 = closes.slice(-5).reduce((a, b) => a + b, 0) / 5;
@@ -1563,7 +1641,7 @@
         }
 
         // ============================================================
-        // 5. 排序核心
+        // 6. 排序核心
         // ============================================================
         function getSignalGroup(signal) {
             const buySignals = ['强力买入', '买入', '左侧试探', '超卖区'];
@@ -1607,7 +1685,7 @@
         }
 
         // ============================================================
-        // 6. 核心刷新与渲染
+        // 7. 核心刷新与渲染（包含增强错误处理）
         // ============================================================
         async function fetchQuotesBatch(codes) {
             if (!codes || codes.length === 0) return {};
@@ -1638,23 +1716,6 @@
                 } catch (e) { console.warn('报价获取失败', e); }
             }));
             return results;
-        }
-
-        async function fetchKLine(code, count = 120) {
-            if (typeof window.fetchKLine === 'function') return await window.fetchKLine(code, count);
-            const url =
-                `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${encodeURIComponent(code)},day,,,${count},qfq`;
-            const data = await (await fetch(url, { signal: AbortSignal.timeout(8000) })).json();
-            const key = Object.keys(data.data)[0];
-            const arr = (data.data[key] && (data.data[key].qfqday || data.data[key].day)) || [];
-            return arr.map(row => ({
-                date: row[0],
-                open: +row[1],
-                close: +row[2],
-                high: +row[3],
-                low: +row[4],
-                volume: +row[5]
-            })).filter(r => r.date && !isNaN(r.open));
         }
 
         async function refreshStocks() {
@@ -1745,14 +1806,14 @@
                             if (fromCache) stockDataMap[s.code].signal += '·';
                         } else {
                             stockDataMap[s.code].signal = '数据不足';
-                            stockDataMap[s.code].action = 'K线不足';
+                            stockDataMap[s.code].action = 'K线不足，无法计算';
                             stockDataMap[s.code].position = 0;
                             stockDataMap[s.code].confidence = 0;
                         }
                     } catch (e) {
                         console.warn(`信号计算失败 ${s.code}:`, e);
-                        stockDataMap[s.code].signal = '计算失败';
-                        stockDataMap[s.code].action = '请重试';
+                        stockDataMap[s.code].signal = '数据不可用';
+                        stockDataMap[s.code].action = '检查网络或稍后重试';
                         stockDataMap[s.code].position = 0;
                         stockDataMap[s.code].confidence = 0;
                     }
@@ -1761,13 +1822,12 @@
             }
             updateTimeDisplay();
 
-            // 刷新持仓价格（从最新的报价更新）
             refreshPortfolioPrices();
             renderPortfolioPanel();
         }
 
         // ============================================================
-        // 7. 渲染股票卡片
+        // 8. 渲染股票卡片（含持仓标签）
         // ============================================================
         function renderStockCards(stocks) {
             const sorted = sortStocks(stocks);
@@ -1777,7 +1837,6 @@
                 return;
             }
 
-            // 获取持仓信息，用于显示持仓标签
             const portfolio = loadPortfolio();
             const posMap = {};
             for (const p of portfolio.positions) {
@@ -1808,7 +1867,6 @@
                 const cls = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
                 const sign = change > 0 ? '+' : '';
 
-                // 持仓标签
                 const pos = posMap[s.code];
                 const hasPos = !!pos;
                 const posTag = hasPos ?
@@ -1927,7 +1985,7 @@
         }
 
         // ============================================================
-        // 8. 长按删除
+        // 9. 长按删除（同原逻辑）
         // ============================================================
         function bindLongPressDelete(container) {
             const LONG_PRESS_MS = 700;
@@ -2005,16 +2063,14 @@
         }
 
         // ============================================================
-        // 9. 持仓面板渲染
+        // 10. 持仓面板渲染
         // ============================================================
         function renderPortfolioPanel() {
             const portfolio = refreshPortfolioPrices();
             const stats = calcPortfolioStats(portfolio);
 
-            // 更新徽章
             document.getElementById('posCountBadge').textContent = portfolio.positions.length;
 
-            // 风控概览
             const limits = window.__riskLimits || DEFAULT_RISK_LIMITS;
             const advice = getRiskAdvice(portfolio, limits);
 
@@ -2046,7 +2102,6 @@
                 statusEl.className = 'ro-value good';
             }
 
-            // 持仓列表
             const listEl = document.getElementById('posList');
             if (!portfolio.positions.length) {
                 listEl.innerHTML = `<div class="pos-empty">暂无持仓，请添加</div>`;
@@ -2075,7 +2130,6 @@
                 }
                 listEl.innerHTML = html;
 
-                // 绑定编辑/删除事件
                 listEl.querySelectorAll('.btn-edit').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -2094,8 +2148,6 @@
                         }
                     });
                 });
-
-                // 点击持仓行可跳转详情
                 listEl.querySelectorAll('.pos-item').forEach(item => {
                     item.addEventListener('click', () => {
                         const code = item.dataset.code;
@@ -2105,7 +2157,6 @@
                 });
             }
 
-            // 仓位汇总条
             const fill = document.getElementById('psFill');
             const pct = Math.min(stats.totalPosPct, 100);
             fill.style.width = pct + '%';
@@ -2115,13 +2166,12 @@
             );
             document.getElementById('psValue').textContent = pct.toFixed(1) + '%';
 
-            // 更新自选股卡片（刷新持仓标签）
             const stocks = window.loadStocks ? window.loadStocks() : [];
             renderStockCards(stocks);
         }
 
         // ============================================================
-        // 10. 持仓面板交互
+        // 11. 持仓面板交互
         // ============================================================
         let panelOpen = false;
 
@@ -2138,16 +2188,13 @@
                 icon.classList.remove('open');
                 icon.textContent = '▼';
             }
-            // 保存状态
             try { localStorage.setItem('panel_open', JSON.stringify(panelOpen)); } catch {}
         }
 
-        // 初始化面板状态
         try {
             const saved = localStorage.getItem('panel_open');
             if (saved !== null) panelOpen = JSON.parse(saved);
         } catch {}
-        // 默认展开
         if (panelOpen === undefined) panelOpen = true;
         togglePanel(panelOpen);
 
@@ -2156,15 +2203,13 @@
         });
 
         // ============================================================
-        // 11. 添加持仓逻辑
+        // 12. 添加持仓逻辑
         // ============================================================
         function populateStockSelect() {
             const select = document.getElementById('posStockSelect');
             const stocks = window.loadStocks ? window.loadStocks() : [];
-            // 保留当前选中的值
             const currentVal = select.value;
             select.innerHTML = '<option value="">选择股票…</option>';
-            // 按名称排序
             const sorted = [...stocks].sort((a, b) => a.name.localeCompare(b.name));
             for (const s of sorted) {
                 const opt = document.createElement('option');
@@ -2172,7 +2217,6 @@
                 opt.textContent = `${s.name} (${s.code.toUpperCase()})`;
                 select.appendChild(opt);
             }
-            // 如果有持仓的股票不在自选股中，也加入下拉
             const portfolio = loadPortfolio();
             for (const p of portfolio.positions) {
                 if (!sorted.some(s => s.code === p.code)) {
@@ -2196,10 +2240,8 @@
             if (!shares || shares <= 0) { toast('请输入有效股数'); return; }
             if (!cost || cost <= 0) { toast('请输入有效成本价'); return; }
 
-            // 如果是手动输入的代码（不在自选股中），尝试添加
             const stocks = window.loadStocks ? window.loadStocks() : [];
             if (!stocks.some(s => s.code === code)) {
-                // 尝试添加到自选股
                 if (window.addStock) {
                     const res = window.addStock(code);
                     if (!res.added && res.reason !== 'duplicate') {
@@ -2219,14 +2261,12 @@
                 document.getElementById('posCost').value = '';
                 document.getElementById('posStop').value = '';
                 renderPortfolioPanel();
-                // 刷新自选股列表以更新持仓标签
                 refreshStocks();
             } else {
                 toast(result.message || '添加失败');
             }
         });
 
-        // 回车快捷添加
         document.getElementById('posShares').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') document.getElementById('btnAddPos').click();
         });
@@ -2235,7 +2275,7 @@
         });
 
         // ============================================================
-        // 12. 编辑持仓弹窗
+        // 13. 编辑持仓弹窗
         // ============================================================
         let editingCode = null;
 
@@ -2295,7 +2335,7 @@
         });
 
         // ============================================================
-        // 13. 添加股票逻辑（复用原有）
+        // 14. 添加股票（复用原有）
         // ============================================================
         document.getElementById('addBtn').addEventListener('click', () => {
             const input = document.getElementById('newStockInput').value.trim();
@@ -2321,7 +2361,7 @@
         });
 
         // ============================================================
-        // 14. OCR 识别
+        // 15. OCR 识别（保留原功能）
         // ============================================================
         const ocrBtn = document.getElementById('ocrBtn');
         const ocrFile = document.getElementById('ocrFile');
@@ -2441,7 +2481,7 @@
         }
 
         // ============================================================
-        // 15. 指数 ticker
+        // 16. 指数 ticker
         // ============================================================
         async function loadMarketData() {
             try {
@@ -2475,7 +2515,7 @@
         }
 
         // ============================================================
-        // 16. 定时器
+        // 17. 定时器
         // ============================================================
         function updateCdown() {
             document.getElementById('countdown').textContent = countdownSec + 's↻';
@@ -2487,7 +2527,7 @@
         }, 1000);
 
         // ============================================================
-        // 17. 错误兜底
+        // 18. 错误兜底
         // ============================================================
         function _renderError(e) {
             try {
@@ -2504,7 +2544,7 @@
         window.addEventListener('unhandledrejection', (ev) => _renderError(ev.reason));
 
         // ============================================================
-        // 18. 暴露到全局（供其他模块使用）
+        // 19. 暴露到全局
         // ============================================================
         window.stockDataMap = stockDataMap;
         window.loadPortfolio = loadPortfolio;
@@ -2516,14 +2556,14 @@
         window.calcPortfolioStats = calcPortfolioStats;
         window.getRiskAdvice = getRiskAdvice;
         window.renderPortfolioPanel = renderPortfolioPanel;
+        window.fetchKLine = fetchKLine; // 供其他模块调用
 
         // ============================================================
-        // 19. 初始化
+        // 20. 初始化
         // ============================================================
         window.addEventListener('load', () => {
-            // 确保 loadStocks 和 addStock 可用
+            // 确保基础函数存在
             if (typeof loadStocks === 'undefined') {
-                // 如果 app.js 未加载，提供默认实现
                 window.loadStocks = function() {
                     try {
                         const raw = localStorage.getItem('stocks_v1');
@@ -2559,19 +2599,13 @@
                 };
             }
 
-            // 初始化持仓面板
             populateStockSelect();
             renderPortfolioPanel();
-
-            // 刷新自选股
-            refreshStocks()
-                .catch(e => _renderError(e));
+            refreshStocks().catch(e => _renderError(e));
             loadMarketData();
 
-            // 定时刷新
             setInterval(() => {
                 refreshStocks().catch(e => _renderError(e));
-                // 同时刷新持仓价格
                 refreshPortfolioPrices();
                 renderPortfolioPanel();
             }, 60000);
@@ -2579,12 +2613,10 @@
             updateTimeDisplay();
             setInterval(updateTimeDisplay, 1000);
 
-            // 暴露给外部
             window.refreshStocks = refreshStocks;
             window.renderStockCards = renderStockCards;
         });
 
-        // 风控参数（从 risk.js 加载，如果没有则使用默认）
         const DEFAULT_RISK_LIMITS = {
             maxSinglePosition: 0.20,
             maxTotalPosition: 0.80,
@@ -2599,7 +2631,7 @@
             window.__riskLimits = DEFAULT_RISK_LIMITS;
         }
 
-        console.log('📊 智能参谋已启动 · 持仓管理 + 风控联动');
+        console.log('📊 智能参谋已启动 · 持仓管理 + 风控联动 · 增强K线获取');
         console.log('💡 提示：在自选股页面管理持仓，风控参数在个股详情页设置');
     </script>
 </body>
