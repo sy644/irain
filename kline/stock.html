@@ -632,33 +632,31 @@ async function initStock(code) {
   }
 
   // ===== 阶段2：延迟非关键计算（量化、风控、基本面、历史表） =====
-  const doDeferred = () => {
-    // 1. 量化诊断（最耗时，优先但延迟）
+    // 阶段2：后台计算（50ms 后执行，不阻塞首屏，但确保一定会执行）
+  setTimeout(() => {
+    // 量化诊断
     try {
       const qm = computeQuantMetrics(data, sum);
       applyQuantToSignal(sum, qm);
       renderQuantMetrics(data, sum);
-      // 量化联动警告渲染
       const verdictBody = document.querySelector('.verdict-body');
       if (verdictBody && sum.quantWarnings && sum.quantWarnings.length) {
         let qi = verdictBody.querySelector('.quant-impact');
-        if (!qi) {
-          qi = document.createElement('div'); qi.className = 'quant-impact';
-          verdictBody.appendChild(qi);
-        }
+        if (!qi) { qi = document.createElement('div'); qi.className = 'quant-impact'; verdictBody.appendChild(qi); }
         qi.innerHTML = '<div class="qi-head">📈 量化战略联动</div>' + sum.quantWarnings.map(w => `<div class="qi-item">${w}</div>`).join('');
       }
     } catch (e) { console.warn('量化诊断失败', e); }
 
-    // 2. 历史表只写最后一天（替代全量写入）
+    // 历史表只写最后一天
     try {
       const stock = (loadStocks().find(s => s.code === code) || { code, name: code });
       const last = data[data.length - 1];
-      const lastRow = {
+      const prevLast = data.length > 1 ? data[data.length - 2] : last;
+      HistoryTable.appendLast({
         date: last.date, code, name: stock.name,
         open: last.open, high: last.high, low: last.low, close: last.close,
-        change: last.close - (data.length > 1 ? data[data.length - 2].close : last.close),
-        changePct: ((last.close - (data.length > 1 ? data[data.length - 2].close : last.close)) / (data.length > 1 ? data[data.length - 2].close : last.close)) * 100,
+        change: last.close - prevLast.close,
+        changePct: ((last.close - prevLast.close) / prevLast.close) * 100,
         volume: last.volume,
         amount: last.volume * (last.high + last.low + last.close) / 3,
         overall: sum.overall, position: sum.position, confidence: sum.confidence,
@@ -666,11 +664,10 @@ async function initStock(code) {
         stopLoss: sum.tpSl && sum.tpSl.stopLoss,
         takeProfitR1: sum.tpSl && sum.tpSl.takeProfitLevels && sum.tpSl.takeProfitLevels[0] && sum.tpSl.takeProfitLevels[0].price,
         dataSource, updatedAt: new Date().toISOString(),
-      };
-      HistoryTable.appendLast(lastRow);
+      });
     } catch (e) { console.warn('写历史表失败', e); }
 
-    // 3. 风控层（延迟执行）
+    // 风控层
     try {
       let portfolio = loadPortfolio();
       if (portfolio.positions.length > 0) {
@@ -685,7 +682,6 @@ async function initStock(code) {
         if (portfolio.equity > portfolio.peakEquity) portfolio.peakEquity = portfolio.equity;
         savePortfolio(portfolio);
       }
-      let marketEnv = null;
       checkMarketEnvironment(fetchKLine).then(me => { sum._marketEnv = me; }).catch(() => {});
       const limits = window.__riskLimits || DEFAULT_RISK_LIMITS;
       const riskResult = applyRiskLimits(sum, portfolio, limits);
@@ -696,7 +692,6 @@ async function initStock(code) {
       sum.riskLevel = riskResult.riskLevel;
       sum.stopLossBreaches = riskResult.stopLossBreaches;
       if (portfolio.equity > 0) recordEquity(portfolio.equity);
-      // 更新仓位条显示
       const posFill = document.querySelector('.pos-bar .fill');
       const posLabel = document.querySelector('.pos-strip .v');
       if (posFill) posFill.style.width = sum.position + '%';
@@ -707,7 +702,7 @@ async function initStock(code) {
       }
     } catch (e) { console.warn('风控计算失败', e); }
 
-    // 4. 基本面数据（异步获取，不阻塞）
+    // 基本面数据
     fetchBasic(code).then(basicData => {
       if (!basicData) {
         const lastRow = HistoryTable.getLatest(code);
@@ -732,11 +727,7 @@ async function initStock(code) {
       }
       updateVolStrip(basicData, sum);
     }).catch(() => {});
-  };
-
-  // 使用 requestIdleCallback 或 setTimeout 延迟执行
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(doDeferred, { timeout: 2000 });
-  else setTimeout(doDeferred, 100);
+  }, 50);
 }
 
 function updateVolStrip(basic, sum) {
@@ -754,6 +745,7 @@ function updateVolStrip(basic, sum) {
 }
 
 function renderPage(data, sum, pivots, currentPrice, change, changePct) {
+  const closes = data.map(d => d.close);
   const up = change >= 0;
   const cls = up ? 'up' : 'down';
   const sign = up ? '+' : '';
