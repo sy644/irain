@@ -520,6 +520,18 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
   } else {
     vpScore = 0; vpLabel = '量价中性'; vpEvent = ''; vpDivergence = false;
   }
+
+  // ===== 7) 研判冲突裁决(后置层) =====
+  // 场景:底层 OBV 判定为"量价背离",但新增的"温和放量 + 价涨"研判也命中
+  //      → 说明这是"放量上涨中 OBV 累计微调"的健康结构,不是真背离
+  //      → 让新研判(健康结构)赢,覆盖前一个判定
+  if (vpDivergence && isAboveAvgVol && priceUp1d && priceSlope5 > 0.02 && !isStrongObvDown) {
+    // 4 个条件全满足才覆盖:温和放量 + 价涨 + 5日涨幅>2% + OBV 不是显著流出
+    vpDivergence = false;
+    vpScore = 1;
+    vpLabel = '放量上涨';
+    vpEvent = 'upTrend';
+  }
   // OBV 累计值(给 volGroup / obvInfo 用)
   let obv = 0;
   for (let i = 0; i < n; i++) {
