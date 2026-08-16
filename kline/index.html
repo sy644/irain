@@ -238,7 +238,7 @@
         }
 
         /* ============================================================
-           🆕 持仓管理面板（含可用资金编辑、行业配置）
+           🆕 持仓管理面板
            ============================================================ */
         .portfolio-panel {
             background: #ffffff;
@@ -289,7 +289,7 @@
             display: block;
         }
 
-        /* 风控概览条（含可编辑现金） */
+        /* 风控概览（含可编辑现金） */
         .risk-overview {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
@@ -328,7 +328,6 @@
             font-weight: 400;
             color: #718096;
         }
-        /* 可编辑现金输入框 */
         .ro-item .cash-edit {
             display: flex;
             align-items: center;
@@ -366,7 +365,7 @@
             background: #2b6cb0;
         }
 
-        /* 行业配置区域 */
+        /* 行业配置 */
         .sector-allocation {
             background: #f7fafc;
             border-radius: 12px;
@@ -577,7 +576,7 @@
             padding: 20px 0;
         }
 
-        /* 仓位进度条（在持仓列表底部） */
+        /* 仓位进度条 */
         .pos-summary {
             display: flex;
             justify-content: space-between;
@@ -641,7 +640,7 @@
             -webkit-touch-callout: none;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
         }
         .stock-card:active {
             transform: scale(0.99);
@@ -670,7 +669,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 12px;
+            gap: 8px;
         }
         .card-left {
             display: flex;
@@ -703,21 +702,23 @@
             color: #a0aec0;
             font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
         }
-        .card-price {
+        .card-price-area {
             text-align: right;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        .card-price {
             font-size: 20px;
             font-weight: 700;
             color: #1a202c;
             font-variant-numeric: tabular-nums;
             letter-spacing: -0.3px;
-            min-width: 70px;
         }
         .card-change {
-            text-align: right;
             font-size: 15px;
             font-weight: 600;
             font-variant-numeric: tabular-nums;
-            min-width: 60px;
         }
         .up {
             color: #e53e3e;
@@ -729,6 +730,65 @@
             color: #a0aec0;
         }
 
+        /* 持仓详情行（股数、盈亏率、仓位占比） */
+        .pos-detail {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px 16px;
+            font-size: 11px;
+            color: #4a5568;
+            padding: 4px 0 2px;
+            border-top: 1px dashed #edf2f7;
+            border-bottom: 1px dashed #edf2f7;
+        }
+        .pos-detail .pd-item {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+        }
+        .pos-detail .pd-item .pd-label {
+            color: #a0aec0;
+            font-weight: 400;
+        }
+        .pos-detail .pd-item .pd-value {
+            font-weight: 600;
+            color: #1a202c;
+        }
+        .pos-detail .pd-item .pd-value.up {
+            color: #e53e3e;
+        }
+        .pos-detail .pd-item .pd-value.down {
+            color: #38a169;
+        }
+
+        /* 止盈止损行 */
+        .tp-sl-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            font-size: 10px;
+            color: #718096;
+            padding: 2px 0;
+        }
+        .tp-sl-info .ts-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .tp-sl-info .ts-item .ts-label {
+            color: #a0aec0;
+        }
+        .tp-sl-info .ts-item .ts-value {
+            font-weight: 600;
+        }
+        .tp-sl-info .ts-item .ts-value.bull {
+            color: #e53e3e;
+        }
+        .tp-sl-info .ts-item .ts-value.bear {
+            color: #38a169;
+        }
+
         /* 信号行（标签+建议+置信度） */
         .card-signal {
             display: flex;
@@ -737,7 +797,7 @@
             flex-wrap: wrap;
             gap: 8px;
         }
-        /* ---- 信号徽章颜色（由深到浅） ---- */
+        /* ---- 信号徽章颜色 ---- */
         .signal-badge {
             display: inline-block;
             padding: 3px 14px;
@@ -747,9 +807,7 @@
             color: #fff;
             letter-spacing: 0.3px;
             background: #a0aec0;
-            /* fallback */
         }
-        /* 买入系（红） */
         .badge-strong-buy {
             background: #C53030;
         }
@@ -763,7 +821,6 @@
             background: #FED7D7;
             color: #742A2A;
         }
-        /* 卖出系（绿） */
         .badge-strong-sell {
             background: #276749;
         }
@@ -777,7 +834,6 @@
             background: #C6F6D5;
             color: #234E52;
         }
-        /* 中性 */
         .badge-hold {
             background: #718096;
         }
@@ -805,7 +861,6 @@
 
         /* 仓位进度条 */
         .position-bar-wrap {
-            margin-top: 4px;
             display: flex;
             align-items: center;
             gap: 10px;
@@ -831,7 +886,7 @@
             text-align: right;
         }
 
-        /* 持仓小标签（卡片上显示） */
+        /* 持仓小标签（卡片上显示，但已移至 pos-detail，保留兼容） */
         .pos-tag {
             font-size: 10px;
             background: #ebf8ff;
@@ -904,7 +959,7 @@
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
         }
 
-        /* 列表头部（显示排序提示） */
+        /* 列表头部 */
         .list-head {
             display: grid;
             grid-template-columns: 1.6fr 1fr 0.9fr 0.9fr;
@@ -1068,11 +1123,9 @@
             }
             .card-price {
                 font-size: 17px;
-                min-width: 60px;
             }
             .card-change {
                 font-size: 13px;
-                min-width: 50px;
             }
             .signal-badge {
                 font-size: 11px;
@@ -1113,6 +1166,14 @@
             .ro-item .cash-edit input {
                 width: 60px;
                 font-size: 12px;
+            }
+            .pos-detail {
+                font-size: 10px;
+                gap: 4px 10px;
+            }
+            .tp-sl-info {
+                font-size: 9px;
+                gap: 4px 10px;
             }
         }
         @media (max-width: 380px) {
@@ -1274,7 +1335,7 @@
         </div>
 
         <!-- ============================================================
-        🆕 持仓管理面板（含可用资金编辑、行业配置）
+        🆕 持仓管理面板
         ============================================================ -->
         <div class="portfolio-panel" id="portfolioPanel">
             <div class="panel-header" id="panelToggle">
@@ -1285,7 +1346,7 @@
                 <span class="toggle-icon" id="toggleIcon">▼</span>
             </div>
             <div class="panel-body" id="panelBody">
-                <!-- 风控概览（含可编辑现金） -->
+                <!-- 风控概览 -->
                 <div class="risk-overview" id="riskOverview">
                     <div class="ro-item">
                         <div class="ro-label">总资产</div>
@@ -1389,17 +1450,16 @@
 
     <script>
         // ============================================================
-        // 0. 行业映射表（内置常见股票行业）
+        // 0. 行业映射表（细化）
         // ============================================================
         const SECTOR_MAP = {
-            // 根据股票代码或名称匹配
-            'sh600519': '消费',
+            'sh600519': '白酒',
             'sz000001': '银行',
             'sz300750': '新能源',
             'sh000001': '指数',
             'sz399001': '指数',
             'sz002594': '新能源',
-            'sz000858': '消费',
+            'sz000858': '白酒',
             'sh600036': '银行',
             'sh601318': '保险',
             'sh600030': '证券',
@@ -1411,10 +1471,9 @@
             'sz000333': '家电',
             'sz000651': '家电',
             'sh600276': '医药',
-            'sh600887': '消费',
-            'sh603288': '消费',
-            'sh601888': '消费',
-            'sz300750': '新能源',
+            'sh600887': '乳业',
+            'sh603288': '调味品',
+            'sh601888': '免税',
             'sz002475': '科技',
             'sz000725': '科技',
             'sh601138': '科技',
@@ -1448,9 +1507,11 @@
             'sh603323': '银行',
             'sh601528': '银行',
             // 用户截图中的股票
+            'sz002602': '中小板',
+            'sh601288': '银行',
             'sz002340': '环保',
             'sz300102': '科技',
-            'sh000636': '指数', // 实际是深证成指？暂设指数
+            'sh000636': '指数',
             'sh600879': '军工',
             'sh600584': '科技',
             'sz301313': '传媒',
@@ -1459,13 +1520,10 @@
             'sh510050': '指数',
             'sz159919': '指数',
             'sh588000': '指数',
-            // 可以继续扩展
         };
 
-        // 获取股票行业
         function getSector(code) {
             if (SECTOR_MAP[code]) return SECTOR_MAP[code];
-            // 根据代码前缀猜测
             const num = code.replace(/^[a-z]+/, '');
             if (num.startsWith('000') || num.startsWith('600') || num.startsWith('601') || num.startsWith('603') || num
                 .startsWith('605')) {
@@ -1479,7 +1537,7 @@
         }
 
         // ============================================================
-        // 1. 持仓数据管理（扩展：支持现金编辑）
+        // 1. 持仓数据管理
         // ============================================================
         const PORTFOLIO_KEY = 'portfolio_v1';
 
@@ -1500,7 +1558,6 @@
             localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(portfolio));
         }
 
-        // 更新现金
         function updateCash(newCash) {
             const portfolio = loadPortfolio();
             if (newCash < 0) return false;
@@ -1672,7 +1729,7 @@
         }
 
         // ============================================================
-        // 2. 行业配置计算
+        // 2. 行业配置
         // ============================================================
         function calcSectorAllocation(portfolio) {
             const sectorMap = {};
@@ -1736,14 +1793,13 @@
         }
 
         // ============================================================
-        // 5. 增强 K 线获取（双源 + 缓存）
+        // 5. K线获取
         // ============================================================
         async function fetchKLine(code, count = 120) {
             try {
                 if (window.HistoryTable && typeof window.HistoryTable.getRecent === 'function') {
                     const cached = window.HistoryTable.getRecent(code, count);
                     if (cached && cached.length >= 60) {
-                        console.log(`[缓存] ${code} 使用历史表数据`);
                         return cached.map(r => ({
                             date: r.date,
                             open: r.open,
@@ -1778,27 +1834,9 @@
                     low: +row[4],
                     volume: +row[5],
                 })).filter(r => r.date && !isNaN(r.open));
-                try {
-                    if (window.HistoryTable && typeof window.HistoryTable.appendRows === 'function') {
-                        const rows = result.map(k => ({
-                            date: k.date,
-                            code: code,
-                            name: code,
-                            open: k.open,
-                            high: k.high,
-                            low: k.low,
-                            close: k.close,
-                            volume: k.volume,
-                            change: 0,
-                            changePct: 0,
-                        }));
-                        window.HistoryTable.appendRows(rows);
-                    }
-                } catch (e) {}
                 return result;
             } catch (err) {
                 clearTimeout(timeout);
-                console.warn(`[K线] ${code} 主接口失败，尝试备用源...`, err.message);
                 try {
                     const backupUrl =
                         `https://quotes.sina.cn/cn/api/json_v2.php/IFengService.getKLineData?symbol=${code}&scale=240&ma=no&datalen=${count}`;
@@ -1806,7 +1844,7 @@
                     if (!res2.ok) throw new Error('备用接口失败');
                     const data2 = await res2.json();
                     if (!data2 || !data2.length) throw new Error('备用数据为空');
-                    const result2 = data2.map(row => ({
+                    return data2.map(row => ({
                         date: row.day,
                         open: +row.open,
                         close: +row.close,
@@ -1814,27 +1852,14 @@
                         low: +row.low,
                         volume: +row.volume || 0,
                     }));
-                    return result2;
                 } catch (err2) {
-                    console.warn(`[K线] ${code} 备用接口也失败`, err2.message);
-                    try {
-                        const cacheKey = `kline_${code}_${count}`;
-                        const raw = localStorage.getItem(cacheKey);
-                        if (raw) {
-                            const item = JSON.parse(raw);
-                            if (Date.now() - item.timestamp < 24 * 60 * 60 * 1000) {
-                                console.log(`[K线] ${code} 使用 localStorage 缓存`);
-                                return item.data;
-                            }
-                        }
-                    } catch (e) {}
-                    throw new Error(`无法获取 ${code} 的K线数据，请检查网络`);
+                    throw new Error(`无法获取 ${code} 的K线数据`);
                 }
             }
         }
 
         // ============================================================
-        // 6. 信号计算（简化版）
+        // 6. 信号计算（含简易止盈止损）
         // ============================================================
         function simpleSignal(closes) {
             if (closes.length < 20) {
@@ -1892,7 +1917,16 @@
                 position = 75;
                 confidence = 85; }
 
-            return { overall, action, position, confidence };
+            // 简易止盈止损（基于当前价）
+            const price = closes[closes.length - 1];
+            const tpSl = {
+                stopLoss: price * 0.97,
+                takeProfit: price * 1.05,
+                stopLossPct: -3,
+                takeProfitPct: 5,
+            };
+
+            return { overall, action, position, confidence, tpSl };
         }
 
         // ============================================================
@@ -1998,10 +2032,11 @@
                         action: stockDataMap[s.code]?.action || '',
                         position: stockDataMap[s.code]?.position || 0,
                         confidence: stockDataMap[s.code]?.confidence || 0,
+                        tpSl: stockDataMap[s.code]?.tpSl || null,
                     };
                 } else if (!stockDataMap[s.code]) {
                     stockDataMap[s.code] = { price: '--', change: 0, changePercent: 0, volume: 0, updateTime: Date.now(),
-                        signal: '--', action: '', position: 0, confidence: 0 };
+                        signal: '--', action: '', position: 0, confidence: 0, tpSl: null };
                 }
             }
             renderStockCards(stocks);
@@ -2013,7 +2048,6 @@
                 await Promise.all(batch.map(async (s) => {
                     try {
                         let kline = null;
-                        let fromCache = false;
                         try {
                             if (window.HistoryTable && typeof window.HistoryTable.getRecent ===
                                 'function') {
@@ -2027,14 +2061,12 @@
                                         close: r.close,
                                         volume: r.volume,
                                     }));
-                                    fromCache = true;
                                 }
                             }
                         } catch (e) { /* ignore */ }
 
                         if (!kline || kline.length < 60) {
                             kline = await fetchKLine(s.code, 120);
-                            fromCache = false;
                         }
 
                         if (kline && kline.length > 20) {
@@ -2058,12 +2090,13 @@
                             stockDataMap[s.code].action = sig.action || '';
                             stockDataMap[s.code].position = sig.position || 0;
                             stockDataMap[s.code].confidence = sig.confidence || 0;
-                            if (fromCache) stockDataMap[s.code].signal += '·';
+                            stockDataMap[s.code].tpSl = sig.tpSl || null;
                         } else {
                             stockDataMap[s.code].signal = '数据不足';
                             stockDataMap[s.code].action = 'K线不足，无法计算';
                             stockDataMap[s.code].position = 0;
                             stockDataMap[s.code].confidence = 0;
+                            stockDataMap[s.code].tpSl = null;
                         }
                     } catch (e) {
                         console.warn(`信号计算失败 ${s.code}:`, e);
@@ -2071,6 +2104,7 @@
                         stockDataMap[s.code].action = '检查网络或稍后重试';
                         stockDataMap[s.code].position = 0;
                         stockDataMap[s.code].confidence = 0;
+                        stockDataMap[s.code].tpSl = null;
                     }
                 }));
                 renderStockCards(stocks);
@@ -2082,7 +2116,7 @@
         }
 
         // ============================================================
-        // 9. 渲染股票卡片（含行业标签）
+        // 9. 渲染股票卡片（含持仓详情、止盈止损）
         // ============================================================
         function renderStockCards(stocks) {
             const sorted = sortStocks(stocks);
@@ -2094,6 +2128,7 @@
 
             const portfolio = loadPortfolio();
             const posMap = {};
+            const equity = portfolio.equity || 0;
             for (const p of portfolio.positions) {
                 posMap[p.code] = p;
             }
@@ -2116,22 +2151,51 @@
                 const action = d.action || '';
                 const position = d.position || 0;
                 const confidence = d.confidence || 0;
+                const tpSl = d.tpSl || null;
 
                 const priceDisplay = typeof price === 'number' ? price.toFixed(2) : price;
                 const pctDisplay = typeof changePct === 'number' ? changePct.toFixed(2) : '0.00';
                 const cls = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
                 const sign = change > 0 ? '+' : '';
 
+                // 持仓信息
                 const pos = posMap[s.code];
                 const hasPos = !!pos;
-                const posTag = hasPos ?
-                    `<span class="pos-tag has-pos">📊 ${pos.shares}股 ${pos.profitPct !== undefined ? (pos.profitPct > 0 ? '+' : '') + pos.profitPct.toFixed(1) + '%' : ''}</span>` :
-                    `<span class="pos-tag no-pos">无持仓</span>`;
+                let posDetailHtml = '';
+                if (hasPos) {
+                    const shares = pos.shares || 0;
+                    const profitPct = pos.profitPct || 0;
+                    const profitCls = profitPct > 0 ? 'up' : (profitPct < 0 ? 'down' : 'flat');
+                    const profitSign = profitPct > 0 ? '+' : '';
+                    // 仓位占比（占账户总资产）
+                    const posPct = equity > 0 ? ((pos.marketValue || 0) / equity) * 100 : 0;
+                    posDetailHtml = `
+                        <div class="pos-detail">
+                            <span class="pd-item"><span class="pd-label">📦 股数</span><span class="pd-value">${shares}</span></span>
+                            <span class="pd-item"><span class="pd-label">盈亏</span><span class="pd-value ${profitCls}">${profitSign}${profitPct.toFixed(1)}%</span></span>
+                            <span class="pd-item"><span class="pd-label">仓位</span><span class="pd-value">${posPct.toFixed(1)}%</span></span>
+                        </div>
+                    `;
+                }
+
+                // 止盈止损行
+                let tpSlHtml = '';
+                if (tpSl && typeof price === 'number') {
+                    const sl = tpSl.stopLoss || price * 0.97;
+                    const tp = tpSl.takeProfit || price * 1.05;
+                    tpSlHtml = `
+                        <div class="tp-sl-info">
+                            <span class="ts-item"><span class="ts-label">🛑 止损</span><span class="ts-value bear">${sl.toFixed(2)} (${((sl/price-1)*100).toFixed(1)}%)</span></span>
+                            <span class="ts-item"><span class="ts-label">🎯 止盈</span><span class="ts-value bull">${tp.toFixed(2)} (${((tp/price-1)*100).toFixed(1)}%)</span></span>
+                        </div>
+                    `;
+                }
 
                 // 行业标签
                 const sector = getSector(s.code);
                 const sectorTag = `<span class="sector-tag">${sector}</span>`;
 
+                // 信号徽章
                 let badgeClass = 'badge-data';
                 let displayText = signal;
                 switch (signal) {
@@ -2193,12 +2257,16 @@
                         <div class="hold-progress"><span class="progress-text">松开取消</span></div>
                         <div class="card-main">
                             <div class="card-left">
-                                <div class="name">${s.name} ${sectorTag} ${posTag}</div>
+                                <div class="name">${s.name} ${sectorTag}</div>
                                 <div class="code">${s.code.toUpperCase()}</div>
                             </div>
-                            <div class="card-price">${priceDisplay}</div>
-                            <div class="card-change ${cls}">${sign}${pctDisplay}%</div>
+                            <div class="card-price-area">
+                                <div class="card-price">${priceDisplay}</div>
+                                <div class="card-change ${cls}">${sign}${pctDisplay}%</div>
+                            </div>
                         </div>
+                        ${posDetailHtml}
+                        ${tpSlHtml}
                         <div class="card-signal">
                             <span class="signal-badge ${badgeClass}">${displayText}</span>
                             <span class="signal-action">${action}</span>
@@ -2244,7 +2312,7 @@
         }
 
         // ============================================================
-        // 10. 长按删除（同原逻辑）
+        // 10. 长按删除
         // ============================================================
         function bindLongPressDelete(container) {
             const LONG_PRESS_MS = 700;
@@ -2339,7 +2407,6 @@
                 stats.totalPosPct > limits.maxTotalPosition * 100 ? ' bad' :
                 stats.totalPosPct > limits.maxTotalPosition * 100 * 0.85 ? ' warn' : ' good'
             );
-            // 现金输入框
             const cashInput = document.getElementById('cashInput');
             cashInput.value = portfolio.cash || 0;
             document.getElementById('roDrawdown').textContent = stats.drawdown.toFixed(1) + '%';
@@ -2447,7 +2514,6 @@
                 return;
             }
 
-            // 建议：超配（持仓占比 > 行业平均？简单提示）
             const avgPct = 100 / result.sectors.length;
             let html = '';
             for (const s of result.sectors) {
@@ -2650,7 +2716,7 @@
         });
 
         // ============================================================
-        // 17. 添加股票（复用原有）
+        // 17. 添加股票
         // ============================================================
         document.getElementById('addBtn').addEventListener('click', () => {
             const input = document.getElementById('newStockInput').value.trim();
@@ -2676,7 +2742,7 @@
         });
 
         // ============================================================
-        // 18. OCR 识别（保留原功能）
+        // 18. OCR 识别
         // ============================================================
         const ocrBtn = document.getElementById('ocrBtn');
         const ocrFile = document.getElementById('ocrFile');
@@ -2946,8 +3012,7 @@
             window.__riskLimits = DEFAULT_RISK_LIMITS;
         }
 
-        console.log('📊 智能参谋已启动 · 持仓管理 + 风控联动 + 行业配置');
-        console.log('💡 支持编辑可用现金、查看行业分配与超低配建议');
+        console.log('📊 智能参谋已启动 · 卡片显示持仓详情 + 止盈止损');
     </script>
 </body>
 </html>
