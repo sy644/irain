@@ -9,7 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.4/dist/tesseract.min.js">
     </script>
     <style>
-        /* ===== 全局重置 & 变量 ===== */
+        /* ===== 全局样式（与之前相同，保留完整） ===== */
         * {
             margin: 0;
             padding: 0;
@@ -289,7 +289,6 @@
             display: block;
         }
 
-        /* 风控概览 */
         .risk-overview {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
@@ -322,11 +321,6 @@
         }
         .risk-overview .ro-item .ro-value.bad {
             color: #e53e3e;
-        }
-        .risk-overview .ro-item .ro-value .sub {
-            font-size: 11px;
-            font-weight: 400;
-            color: #718096;
         }
         .risk-overview .ro-item .ro-value .param-hint {
             font-size: 9px;
@@ -370,7 +364,6 @@
             background: #2b6cb0;
         }
 
-        /* 行业配置 */
         .sector-allocation {
             background: #f7fafc;
             border-radius: 12px;
@@ -437,7 +430,6 @@
             padding: 10px 0;
         }
 
-        /* 添加持仓表单 */
         .add-pos-form {
             display: flex;
             flex-wrap: wrap;
@@ -490,7 +482,6 @@
             text-align: center;
         }
 
-        /* 持仓列表 */
         .pos-list {
             display: flex;
             flex-direction: column;
@@ -581,7 +572,6 @@
             padding: 20px 0;
         }
 
-        /* 仓位进度条 */
         .pos-summary {
             display: flex;
             justify-content: space-between;
@@ -767,7 +757,7 @@
         .tp-sl-info {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px 16px;
+            gap: 4px 12px;
             font-size: 10px;
             color: #718096;
             padding: 2px 0;
@@ -775,7 +765,7 @@
         .tp-sl-info .ts-item {
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 3px;
         }
         .tp-sl-info .ts-item .ts-label {
             color: #a0aec0;
@@ -793,6 +783,7 @@
             font-size: 9px;
             color: #a0aec0;
             text-align: right;
+            line-height: 1.3;
         }
 
         .card-signal {
@@ -983,7 +974,6 @@
             color: #a0aec0;
         }
 
-        /* ===== Toast ===== */
         .toast {
             position: fixed;
             top: 20px;
@@ -1012,7 +1002,6 @@
             }
         }
 
-        /* ===== OCR 覆盖层 ===== */
         .ocr-overlay {
             position: fixed;
             inset: 0;
@@ -1152,7 +1141,10 @@
             }
             .tp-sl-info {
                 font-size: 9px;
-                gap: 4px 10px;
+                gap: 3px 8px;
+            }
+            .tp-sl-detail {
+                font-size: 8px;
             }
         }
         @media (max-width: 380px) {
@@ -1165,7 +1157,6 @@
             }
         }
 
-        /* ===== 编辑持仓弹窗 ===== */
         .modal-mask {
             position: fixed;
             inset: 0;
@@ -1325,7 +1316,6 @@
                 <span class="toggle-icon" id="toggleIcon">▼</span>
             </div>
             <div class="panel-body" id="panelBody">
-                <!-- 风控概览 -->
                 <div class="risk-overview" id="riskOverview">
                     <div class="ro-item">
                         <div class="ro-label">总资产</div>
@@ -1355,7 +1345,6 @@
                     </div>
                 </div>
 
-                <!-- 行业配置 -->
                 <div class="sector-allocation" id="sectorAllocation">
                     <div class="sa-title">
                         <span>📊 资金行业分配</span>
@@ -1364,7 +1353,6 @@
                     <div id="sectorList"><div class="sector-empty">暂无持仓，请添加</div></div>
                 </div>
 
-                <!-- 添加持仓表单 -->
                 <div class="add-pos-form" id="addPosForm">
                     <select id="posStockSelect">
                         <option value="">选择股票…</option>
@@ -1376,12 +1364,10 @@
                     <div class="hint-text">从自选股选择，或手动输入代码添加</div>
                 </div>
 
-                <!-- 持仓列表 -->
                 <div class="pos-list" id="posList">
                     <div class="pos-empty">暂无持仓，请添加</div>
                 </div>
 
-                <!-- 仓位汇总 -->
                 <div class="pos-summary" id="posSummary">
                     <span class="ps-label">📊 总仓位</span>
                     <div class="ps-bar"><div class="ps-fill" id="psFill" style="width:0%"></div></div>
@@ -1752,10 +1738,8 @@
             return DEFAULT_RISK_LIMITS;
         }
 
-        // 挂到全局，供其他部分使用
         window.__riskLimits = getRiskLimits();
 
-        // 监听其他标签页修改风控参数
         window.addEventListener('storage', (e) => {
             if (e.key === 'risk_limits_v1') {
                 window.__riskLimits = getRiskLimits();
@@ -1875,7 +1859,7 @@
         }
 
         // ============================================================
-        // 7. 信号计算（含动态止盈止损）
+        // 7. 信号计算（含组合止盈策略：100%仓位全覆盖）
         // ============================================================
         function simpleSignal(closes, highs, lows) {
             if (closes.length < 20) {
@@ -1956,33 +1940,45 @@
                 }
             }
 
-            // ---- 支撑阻力 ----
+            // ---- 支撑阻力（R2 备用） ----
             const high = highs ? Math.max(...highs.slice(-20)) : price * 1.05;
             const low = lows ? Math.min(...lows.slice(-20)) : price * 0.95;
             const pp = (high + low + price) / 3;
             const s1 = 2 * pp - high;
             const r1 = 2 * pp - low;
+            const r2 = pp + (high - low);
 
             // ---- 动态止损 ----
             const stopByATR = price - 2 * atr;
             const stopByS1 = s1 || (price * 0.97);
             const stopLoss = Math.min(stopByATR, stopByS1, price * 0.95);
 
-            // ---- 分批止盈 ----
-            const targets = [];
-            if (r1 && r1 > price) {
-                targets.push({ price: r1, ratio: 0.20, label: 'R1' });
-                targets.push({ price: price + 1.5 * atr, ratio: 0.30, label: '+1.5ATR' });
-                targets.push({ price: price + 2.5 * atr, ratio: 0.30, label: '+2.5ATR' });
-            } else {
-                targets.push({ price: price * 1.05, ratio: 0.30, label: '+5%' });
-                targets.push({ price: price * 1.10, ratio: 0.30, label: '+10%' });
-                targets.push({ price: price * 1.15, ratio: 0.20, label: '+15%' });
-            }
-            // 确保总比例 ≤ 1
-            let totalRatio = targets.reduce((s, t) => s + t.ratio, 0);
-            if (totalRatio > 1) targets.forEach(t => t.ratio /= totalRatio);
+            // =============================================================
+            // ★★★ 核心升级：组合止盈策略（100%仓位全覆盖）★★★
+            // 不区分震荡/趋势，同时执行：短线落袋（前60%）+ 长线跟踪（后40%）
+            // 无论市场怎么走，都有仓位在正确的一边
+            // =============================================================
+            const atr1 = price + 1.0 * atr; // 短线目标1
+            const atr2 = price + 2.0 * atr; // 中线目标
+            const atr3 = price + 3.5 * atr; // 长线跟踪目标
 
+            let targets = [
+                { price: atr1, ratio: 0.30, label: '+1ATR(短线)' },
+                { price: atr2, ratio: 0.30, label: '+2ATR(中线)' },
+                { price: atr3, ratio: 0.40, label: '+3.5ATR(长线)' }
+            ];
+
+            // 若 R1 比 atr1 更近且有效（R1 > price），用 R1 替换或合并
+            if (r1 && r1 > price && r1 < atr1) {
+                targets[0] = { price: r1, ratio: 0.25, label: 'R1(阻力)' };
+                // 将节省的5%加到长线
+                targets[2].ratio = 0.45;
+            }
+
+            // 若 R2 比 atr3 更近，作为额外参考（但不替换，只影响显示）
+            const hasR2 = r2 && r2 > atr3;
+
+            // 移动止损
             const trailingStop = {
                 enabled: true,
                 trigger: price + 1.5 * atr,
@@ -1997,6 +1993,9 @@
                 atr,
                 s1,
                 r1,
+                r2,
+                hasR2,
+                note: '组合策略：短线落袋 + 长线跟踪'
             };
 
             return { overall, action, position, confidence, tpSl };
@@ -2148,7 +2147,6 @@
                             const lows = kline.map(d => d.low);
                             let sig;
                             if (typeof window.summarize === 'function') {
-                                // 如果外部有更专业的函数，优先使用
                                 const opens = kline.map(d => d.open);
                                 const vols = kline.map(d => d.volume);
                                 const prev = kline[kline.length - 2] || kline[kline.length - 1];
@@ -2157,9 +2155,7 @@
                                     pivots = window.calcPivots(prev.high, prev.low, prev.close);
                                 }
                                 sig = window.summarize(closes, highs, lows, opens, vols, pivots);
-                                // 但外部函数可能没有 tpSl，我们补充
                                 if (!sig.tpSl) {
-                                    // 重新计算 tpSl
                                     const extra = simpleSignal(closes, highs, lows);
                                     sig.tpSl = extra.tpSl;
                                 }
@@ -2196,7 +2192,7 @@
         }
 
         // ============================================================
-        // 10. 渲染股票卡片（含持仓详情、止盈止损）
+        // 10. 渲染股票卡片
         // ============================================================
         function renderStockCards(stocks) {
             const sorted = sortStocks(stocks);
@@ -2238,7 +2234,6 @@
                 const cls = change > 0 ? 'up' : (change < 0 ? 'down' : 'flat');
                 const sign = change > 0 ? '+' : '';
 
-                // 持仓信息
                 const pos = posMap[s.code];
                 const hasPos = !!pos;
                 let posDetailHtml = '';
@@ -2257,28 +2252,27 @@
                     `;
                 }
 
-                // 止盈止损行
+                // 止盈止损行（显示组合策略）
                 let tpSlHtml = '';
                 if (tpSl && typeof price === 'number') {
                     const sl = tpSl.stopLoss || price * 0.97;
                     const targets = tpSl.takeProfitLevels || [{ price: price * 1.05 }];
                     const firstTarget = targets[0]?.price || price * 1.05;
                     const moveTrigger = tpSl.trailingStop?.trigger || '--';
+                    const targetLabels = targets.map(t => t.label + '@' + (t.ratio * 100).toFixed(0) + '%').join(' → ');
                     tpSlHtml = `
                         <div class="tp-sl-info">
                             <span class="ts-item"><span class="ts-label">🛑 止损</span><span class="ts-value bear">${sl.toFixed(2)} (${((sl/price-1)*100).toFixed(1)}%)</span></span>
                             <span class="ts-item"><span class="ts-label">🎯 止盈</span><span class="ts-value bull">${firstTarget.toFixed(2)} (${((firstTarget/price-1)*100).toFixed(1)}%)</span></span>
                             <span class="ts-item"><span class="ts-label">📈 移动触发</span><span class="ts-value">${moveTrigger !== '--' ? moveTrigger.toFixed(2) : '--'}</span></span>
                         </div>
-                        <div class="tp-sl-detail">分批: ${targets.map(t => t.label + '@' + (t.ratio*100).toFixed(0)+'%').join(' → ')}</div>
+                        <div class="tp-sl-detail">${targetLabels}</div>
                     `;
                 }
 
-                // 行业标签
                 const sector = getSector(s.code);
                 const sectorTag = `<span class="sector-tag">${sector}</span>`;
 
-                // 信号徽章
                 let badgeClass = 'badge-data';
                 let displayText = signal;
                 switch (signal) {
@@ -2473,7 +2467,7 @@
         }
 
         // ============================================================
-        // 12. 持仓面板渲染（含风控参数同步）
+        // 12. 持仓面板渲染
         // ============================================================
         function renderPortfolioPanel() {
             const portfolio = refreshPortfolioPrices();
@@ -2481,9 +2475,8 @@
 
             document.getElementById('posCountBadge').textContent = portfolio.positions.length;
 
-            // ★ 从 localStorage 读取最新风控参数
             const limits = getRiskLimits();
-            window.__riskLimits = limits; // 更新全局
+            window.__riskLimits = limits;
 
             const advice = getRiskAdvice(portfolio, limits);
 
@@ -2493,17 +2486,15 @@
                 stats.totalPosPct > limits.maxTotalPosition * 100 ? ' bad' :
                 stats.totalPosPct > limits.maxTotalPosition * 100 * 0.85 ? ' warn' : ' good'
             );
-            // 显示参数上限（小字提示）
-            const totalHint = document.createElement('span');
-            totalHint.className = 'param-hint';
-            totalHint.textContent = `上限 ${(limits.maxTotalPosition*100).toFixed(0)}%`;
-            const totalEl = document.getElementById('roTotalPos');
-            if (!totalEl.querySelector('.param-hint')) {
-                const hint = document.createElement('div');
-                hint.className = 'param-hint';
-                hint.textContent = `上限 ${(limits.maxTotalPosition*100).toFixed(0)}%`;
-                totalEl.parentNode.appendChild(hint);
+            // 显示总仓位上限
+            const totalParent = document.getElementById('roTotalPos').parentNode;
+            let hintEl = totalParent.querySelector('.param-hint');
+            if (!hintEl) {
+                hintEl = document.createElement('div');
+                hintEl.className = 'param-hint';
+                totalParent.appendChild(hintEl);
             }
+            hintEl.textContent = `上限 ${(limits.maxTotalPosition*100).toFixed(0)}%`;
 
             const cashInput = document.getElementById('cashInput');
             cashInput.value = portfolio.cash || 0;
@@ -2527,13 +2518,11 @@
                 statusEl.textContent = '✅ 正常';
                 statusEl.className = 'ro-value good';
             }
-            // 显示单标上限
-            const hintEl = document.getElementById('riskParamHint');
-            if (hintEl) {
-                hintEl.textContent = `单标上限 ${(limits.maxSinglePosition*100).toFixed(0)}% · 回撤熔断 ${(limits.maxDrawdown*100).toFixed(0)}%`;
+            const paramHint = document.getElementById('riskParamHint');
+            if (paramHint) {
+                paramHint.textContent = `单标上限 ${(limits.maxSinglePosition*100).toFixed(0)}% · 回撤熔断 ${(limits.maxDrawdown*100).toFixed(0)}%`;
             }
 
-            // 持仓列表
             const listEl = document.getElementById('posList');
             if (!portfolio.positions.length) {
                 listEl.innerHTML = `<div class="pos-empty">暂无持仓，请添加</div>`;
@@ -2589,7 +2578,6 @@
                 });
             }
 
-            // 仓位汇总条
             const fill = document.getElementById('psFill');
             const pct = Math.min(stats.totalPosPct, 100);
             fill.style.width = pct + '%';
@@ -2599,7 +2587,6 @@
             );
             document.getElementById('psValue').textContent = pct.toFixed(1) + '%';
 
-            // 行业配置
             renderSectorAllocation(portfolio);
 
             const stocks = window.loadStocks ? window.loadStocks() : [];
@@ -3084,7 +3071,6 @@
                 };
             }
 
-            // 同步初始风控参数
             window.__riskLimits = getRiskLimits();
 
             populateStockSelect();
@@ -3105,7 +3091,8 @@
             window.renderStockCards = renderStockCards;
         });
 
-        console.log('📊 智能参谋已启动 · 风控参数已同步 · 止盈止损策略已集成');
+        console.log('📊 智能参谋已启动 · 组合止盈策略（100%仓位全覆盖）');
+        console.log('🎯 止盈逻辑：30%短线(+1ATR) + 30%中线(+2ATR) + 40%长线(+3.5ATR)');
     </script>
 </body>
 </html>
