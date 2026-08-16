@@ -490,11 +490,18 @@ function applyQuantToSignal(sum, qm) {
   const original = { position: sum.position, confidence: sum.confidence };
   let warnings = [];
 
-  const isStrongBreakout = (sum.vpEvent === 'fangBreakout' && sum.vpScore >= 1);
+  // 真强突破:放量突破 + 量价齐升(OBV 上行 + 无背离) —— 健康量价结构
+  const obvDir = sum.obvInfo && sum.obvInfo.direction;
+  const isStrongBreakout = (
+    sum.vpEvent === 'fangBreakout' &&
+    sum.vpScore >= 1 &&
+    obvDir === 'up' &&
+    !sum.vpDivergence
+  );
 
   if (isStrongBreakout) {
-    if (sum.position < 50) sum.position = Math.min(60, sum.position + 20);
-    warnings.push(`🚀 放量突破前高，量化限制放宽，仓位提升至 ${sum.position}%`);
+    if (sum.position < 60) sum.position = Math.min(65, sum.position + 20);
+    warnings.push(`🚀 真放量突破（OBV 同步上行,无背离）,量化限制放宽,仓位提升至 ${sum.position}%`);
   } else if (v.bad) {
     if (sum.position > 30) { sum.position = 30; let reason = ''; if (v.sharpe < 0) reason += `夏普${v.sharpe.toFixed(2)}<0 `; if (v.mdd > 0.25) reason += `回撤${(v.mdd*100).toFixed(0)}%>25% `; if (v.ir != null && v.ir < -0.5) reason += `IR${v.ir.toFixed(2)}<-0.5 `; warnings.push(`📉 量化战略偏弱（${reason.trim() || '综合指标不佳'}），仓位封顶 30%`); }
     sum.confidence = Math.min(sum.confidence, 40);
@@ -518,6 +525,12 @@ function applyQuantToSignal(sum, qm) {
   if (v.pf != null && v.pf < 1 && ['买入', '强力买入', '左侧试探'].includes(signal) && !isStrongBreakout) {
     sum.position = Math.min(sum.position, 25);
     warnings.push(`💸 盈利因子 ${v.pf.toFixed(2)} < 1，长期负期望，买入仓位封顶 25%`);
+  }
+
+  // 假突破嫌疑:虽然标了 fangBreakout,但 OBV 没跟上 / 有背离 —— 收紧
+  if (sum.vpEvent === 'fangBreakout' && !isStrongBreakout) {
+    sum.position = Math.min(sum.position, 30);
+    warnings.push(`⚠ 标记为放量突破但 OBV 流出 / 量价背离,疑似假突破,仓位封顶 30%`);
   }
 
   sum.quantWarnings = warnings;
@@ -1021,16 +1034,25 @@ function renderPage(data, sum, pivots, currentPrice, change, changePct) {
       el.innerHTML = `<span class="icon">⚡</span><div><b>放量</b>跌破关键均线 · 看跌信号。建议<b>减仓回避</b>，若次日缩量收复 MA60 再回补。</div>`;
     } else if (sum.vpDivergence) {
       el.className = 'vp-alert warn';
-      el.innerHTML = `<span class="icon">⚠</span><div><b>量价背离</b>：价格涨但 OBV 流出，资金趁反弹出货，建议收紧仓位。</div>`;
+      el.innerHTML = `<span class="icon">⚠</span><div><b>量价背离</b>：价格涨但 OBV 流出,资金趁反弹出货,建议收紧仓位。</div>`;
     } else if (sum.vpEvent === 'fangBreakout') {
+      const obvUp = sum.obvInfo && sum.obvInfo.direction === 'up';
+      if (obvUp) {
+        el.className = 'vp-alert good';
+        el.innerHTML = `<span class="icon">✓</span><div><b>真放量突破</b>：价破前高 + 量超 1.5x + OBV 同步上行,健康量价结构,高权重看涨,可介入加仓。</div>`;
+      } else {
+        el.className = 'vp-alert warn';
+        el.innerHTML = `<span class="icon">⚠</span><div><b>疑似假突破</b>：虽然价破前高且放量,但 OBV 未跟随(甚至流出),警惕主力借机出货,建议观望或减仓。</div>`;
+      }
+    } else if (sum.vpEvent === 'shrinkingWash') {
       el.className = 'vp-alert good';
-      el.innerHTML = `<span class="icon">✓</span><div><b>放量突破</b>关键均线 + OBV 上行，高权重看涨，可介入加仓。</div>`;
+      el.innerHTML = `<span class="icon">🌊</span><div><b>缩量洗盘</b>：价格从近期高点小幅回撤(2%~8%)且成交量持续萎缩到 20 日均量之下,典型健康洗盘,主力未出货,可持有等待放量确认。</div>`;
     } else if (sum.vpEvent === 'upTrend') {
       el.className = 'vp-alert good';
-      el.innerHTML = `<span class="icon">●</span><div>缩量上涨（主力锁仓），需次日放量确认方可持续看多。</div>`;
+      el.innerHTML = `<span class="icon">●</span><div>缩量上涨(主力锁仓),需次日放量确认方可持续看多。</div>`;
     } else {
       el.className = 'vp-alert warn';
-      el.innerHTML = `<span class="icon">·</span><div>量价状态：${sum.vpLabel}。OBV ${sum.obvInfo.direction==='up'?'上行':'下行'}，VOL 5/10 = ${sum.volaRatio.toFixed(2)}。</div>`;
+      el.innerHTML = `<span class="icon">·</span><div>量价状态:${sum.vpLabel}。OBV ${sum.obvInfo && sum.obvInfo.direction==='up'?'上行':'下行'},VOL 5/10 = ${(sum.volaRatio||1).toFixed(2)}。</div>`;
     }
   }
 
