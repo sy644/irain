@@ -490,11 +490,13 @@ function applyQuantToSignal(sum, qm) {
   const original = { position: sum.position, confidence: sum.confidence };
   let warnings = [];
 
-  // 真强突破:放量突破 + 量价齐升(OBV 上行 + 无背离) —— 健康量价结构
+  // 真强突破:放量突破(价破前高 + 大成交量) + OBV 上行 + 无背离 —— 健康量价结构
+  // 注意:这里 vpLabel === '放量突破'(最强)才放大仓位,vpLabel === '放量上涨'(OBV 中性)保持原样
   const obvDir = sum.obvInfo && sum.obvInfo.direction;
   const isStrongBreakout = (
     sum.vpEvent === 'fangBreakout' &&
-    sum.vpScore >= 1 &&
+    sum.vpLabel === '放量突破' &&
+    sum.vpScore >= 1.5 &&
     obvDir === 'up' &&
     !sum.vpDivergence
   );
@@ -527,10 +529,11 @@ function applyQuantToSignal(sum, qm) {
     warnings.push(`💸 盈利因子 ${v.pf.toFixed(2)} < 1，长期负期望，买入仓位封顶 25%`);
   }
 
-  // 假突破嫌疑:虽然标了 fangBreakout,但 OBV 没跟上 / 有背离 —— 收紧
-  if (sum.vpEvent === 'fangBreakout' && !isStrongBreakout) {
+  // 假突破嫌疑:vpLabel === '放量突破' 但 OBV 没跟上 / 有背离 —— 收紧
+  // vpLabel === '放量上涨'(OBV 中性)不算假突破,放行
+  if (sum.vpLabel === '放量突破' && !isStrongBreakout) {
     sum.position = Math.min(sum.position, 30);
-    warnings.push(`⚠ 标记为放量突破但 OBV 流出 / 量价背离,疑似假突破,仓位封顶 30%`);
+    warnings.push(`⚠ 标记为放量突破但 OBV 未跟随 / 量价背离,疑似假突破,仓位封顶 30%`);
   }
 
   sum.quantWarnings = warnings;
@@ -1036,20 +1039,30 @@ function renderPage(data, sum, pivots, currentPrice, change, changePct) {
       el.className = 'vp-alert warn';
       el.innerHTML = `<span class="icon">⚠</span><div><b>量价背离</b>：价格涨但 OBV 流出,资金趁反弹出货,建议收紧仓位。</div>`;
     } else if (sum.vpEvent === 'fangBreakout') {
-      const obvUp = sum.obvInfo && sum.obvInfo.direction === 'up';
-      if (obvUp) {
+      // 按 vpLabel 分支:'放量突破'(OBV 上行)绿色, '放量上涨'(OBV 中性)绿色
+      if (sum.vpLabel === '放量突破') {
         el.className = 'vp-alert good';
-        el.innerHTML = `<span class="icon">✓</span><div><b>真放量突破</b>：价破前高 + 量超 1.5x + OBV 同步上行,健康量价结构,高权重看涨,可介入加仓。</div>`;
+        el.innerHTML = `<span class="icon">✓</span><div><b>真放量突破</b>:价破前高 + 量超 1.5x + OBV 同步上行,健康量价结构,高权重看涨,可介入加仓。</div>`;
+      } else if (sum.vpLabel === '放量上涨') {
+        el.className = 'vp-alert good';
+        el.innerHTML = `<span class="icon">📈</span><div><b>放量上涨</b>:价破前高且当日放量,OBV 中性(累计微调属正常,正在蓄力),典型健康上攻结构,可持有/分批介入。</div>`;
       } else {
-        el.className = 'vp-alert warn';
-        el.innerHTML = `<span class="icon">⚠</span><div><b>疑似假突破</b>：虽然价破前高且放量,但 OBV 未跟随(甚至流出),警惕主力借机出货,建议观望或减仓。</div>`;
+        // 兼容旧判定(理论上不会到这里)
+        const obvUp = sum.obvInfo && sum.obvInfo.direction === 'up';
+        if (obvUp) {
+          el.className = 'vp-alert good';
+          el.innerHTML = `<span class="icon">✓</span><div><b>真放量突破</b>:价破前高 + 量超 1.5x + OBV 同步上行,健康量价结构。</div>`;
+        } else {
+          el.className = 'vp-alert warn';
+          el.innerHTML = `<span class="icon">⚠</span><div><b>疑似假突破</b>:虽然价破前高且放量,但 OBV 未跟随,警惕主力借机出货。</div>`;
+        }
       }
+    } else if (sum.vpEvent === 'upTrend') {
+      el.className = 'vp-alert good';
+      el.innerHTML = `<span class="icon">📈</span><div><b>量价齐升</b>:成交量活跃且价格上涨,OBV 同步上行,典型健康多头,可持续看多。</div>`;
     } else if (sum.vpEvent === 'shrinkingWash') {
       el.className = 'vp-alert good';
       el.innerHTML = `<span class="icon">🌊</span><div><b>缩量洗盘</b>：价格从近期高点小幅回撤(2%~8%)且成交量持续萎缩到 20 日均量之下,典型健康洗盘,主力未出货,可持有等待放量确认。</div>`;
-    } else if (sum.vpEvent === 'upTrend') {
-      el.className = 'vp-alert good';
-      el.innerHTML = `<span class="icon">●</span><div>缩量上涨(主力锁仓),需次日放量确认方可持续看多。</div>`;
     } else {
       el.className = 'vp-alert warn';
       el.innerHTML = `<span class="icon">·</span><div>量价状态:${sum.vpLabel}。OBV ${sum.obvInfo && sum.obvInfo.direction==='up'?'上行':'下行'},VOL 5/10 = ${(sum.volaRatio||1).toFixed(2)}。</div>`;

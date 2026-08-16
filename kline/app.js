@@ -444,6 +444,99 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
   if (changePct > 1) score += 0.5; else if (changePct < -1) score -= 0.5;
   if (pct5 > 3) score += 1; else if (pct5 < -3) score -= 1;
 
+  // ===== 量价决策树(深度版,基于"健康量价结构") =====
+  // 必须在 score 算完之后、分档之前执行,这样 vpDivergence 才能影响 overall
+  // 1) OBV 8日斜率(拉长窗口,避免单日波动误判)
+  let obvSlope8 = 0;
+  if (n >= 9) {
+    let cur = 0, past = 0;
+    for (let i = 0; i < n; i++) {
+      if (i >= n - 8) cur += (closes[i] > (closes[i-1] || closes[i]) ? vols[i] : (closes[i] < (closes[i-1] || closes[i]) ? -vols[i] : 0));
+      if (i === n - 9) past = cur;
+    }
+    obvSlope8 = (cur - past) / (Math.abs(past) + 1);
+  }
+  const isObvUp = obvSlope8 > 0.01;
+  const isObvDown = obvSlope8 < -0.01;
+
+  // 2) 关键量
+  const lastVol = vols[n - 1];
+  const sum5Vol = vols.slice(-5).reduce((a, b) => a + b, 0);
+  const sum20Vol = vols.slice(-20).reduce((a, b) => a + b, 0);
+  const avgVol5 = sum5Vol / 5;
+  const avgVol20 = sum20Vol / 20;
+  const volMedian20 = (() => {
+    const arr = vols.slice(-20).slice().sort((a, b) => a - b);
+    return arr[Math.floor(arr.length / 2)];
+  })();
+  const recentHigh20 = highs ? Math.max(...highs.slice(-20)) : price * 1.05;
+  const recentLow20 = lows ? Math.min(...lows.slice(-20)) : price * 0.95;
+  const priceUp1d = closes[n - 1] > closes[n - 2];
+  const priceSlope5 = n > 5 ? (price - closes[n - 5]) / closes[n - 5] : 0;
+  const pullbackFromHigh = (recentHigh20 - price) / recentHigh20;
+  // 价格在近 20 日所处的位置(0~1,1=创近 20 日新高)
+  const pricePosition20 = recentHigh20 > recentLow20 ? (price - recentLow20) / (recentHigh20 - recentLow20) : 0.5;
+
+  // 3) 突破 / 放量 / 缩量
+  const isBreakHigh = price > recentHigh20;
+  const isBigVolNow = lastVol > volMedian20 * 1.5;
+  const isShrinkingVol = avgVol5 < avgVol20 * 0.85;
+  // "大成交量"判定(更适合放量上涨分支):最近 3 日任一成交量 > 20 日均量 1.05x
+  // 阈值 1.05x 是为了捕捉"温和放量"(8/14 1.77M vs 1.62M 均量 = 1.09x,稍微命中)
+  // 配合价涨(priceUp1d)即可判定为放量上涨,不要求绝对巨量
+  const isAboveAvgVol = lastVol > avgVol20 * 1.05 || vols[n - 2] > avgVol20 * 1.05 || vols[n - 3] > avgVol20 * 1.05;
+
+  // 4) 真背离:严格三件套 —— 价格创近 20 日新高/高位 + OBV 显著流出 + 价格上涨趋势
+  // 之所以加 "obvSlope8 < -0.05" 和 "pricePosition20 > 0.8" 是为了过滤"放量上涨中 OBV 微调"这种健康结构
+  const isStrongObvDown = obvSlope8 < -0.05;
+  const isTrueDivergence = priceSlope5 > 0.02 && isStrongObvDown && pricePosition20 > 0.8;
+
+  // 5) 缩量洗盘:从近期高点小幅回撤(2%~8%)+ 持续缩量
+  const isShrinkingWash = pullbackFromHigh > 0.02 && pullbackFromHigh < 0.08 && isShrinkingVol && !priceUp1d;
+
+  // 6) 决策树
+  let vpScore = 0, vpLabel = '量价中性', vpEvent = '', vpDivergence = false;
+  if (isTrueDivergence && isBreakHigh) {
+    // 真背离 + 价破前高 —— 假突破嫌疑
+    vpScore = -1.5; vpLabel = '量价背离'; vpEvent = 'divergence'; vpDivergence = true;
+  } else if (isTrueDivergence) {
+    // 真背离(高位 + OBV 显著流出)—— 顶背离
+    vpScore = -1; vpLabel = '量价背离'; vpEvent = 'divergence'; vpDivergence = true;
+  } else if (isBreakHigh && isBigVolNow) {
+    // 价破前高 + 大成交量 → 放量上涨/突破(OBV 不再强约束,避免误判健康结构)
+    // OBV 上行 → 真突破;OBV 中性 → 放量上涨;OBV 显著流出已被 isTrueDivergence 捕获
+    vpScore = isObvUp ? 1.5 : 1; vpLabel = isObvUp ? '放量突破' : '放量上涨'; vpEvent = 'fangBreakout'; vpDivergence = false;
+  } else if (isAboveAvgVol && priceUp1d) {
+    // 量增 + 价涨(未破前高)→ 放量上涨
+    vpScore = 1; vpLabel = '放量上涨'; vpEvent = 'upTrend'; vpDivergence = false;
+  } else if (lastVol > avgVol20 * 1.5 && !priceUp1d) {
+    vpScore = -1; vpLabel = '放量滞涨'; vpEvent = 'fangBreak'; vpDivergence = false;
+  } else if (isShrinkingWash) {
+    vpScore = 0.5; vpLabel = '缩量洗盘'; vpEvent = 'shrinkingWash'; vpDivergence = false;
+  } else if (lastVol > avgVol20 * 1.5 && priceUp1d) {
+    vpScore = 1; vpLabel = '量价齐升'; vpEvent = 'upTrend'; vpDivergence = false;
+  } else if (priceSlope5 > 0 && isObvUp) {
+    vpScore = 0.5; vpLabel = '温和上行'; vpEvent = 'upTrend'; vpDivergence = false;
+  } else {
+    vpScore = 0; vpLabel = '量价中性'; vpEvent = ''; vpDivergence = false;
+  }
+  // OBV 累计值(给 volGroup / obvInfo 用)
+  let obv = 0;
+  for (let i = 0; i < n; i++) {
+    if (i > 0) {
+      if (closes[i] > closes[i - 1]) obv += vols[i];
+      else if (closes[i] < closes[i - 1]) obv -= vols[i];
+    }
+  }
+  const obvDirection = isObvUp ? 'up' : (isObvDown ? 'down' : 'neutral');
+  const volaRatio = avgVol20 > 0 ? avgVol5 / avgVol20 : 1;
+
+  // ===== 量价积分合并到 score,让总分反映量价 =====
+  // 真背离 -2 分,缩量洗盘 +0.5,真放量突破 +1
+  if (vpDivergence) score -= 2;
+  else if (vpEvent === 'shrinkingWash') score += 0.5;
+  else if (vpEvent === 'fangBreakout') score += 1;
+
   let overall, action, position, confidence;
   if (score >= 5) { overall = '强力买入'; action = '强势突破，积极跟进'; position = 85; confidence = 90; }
   else if (score >= 3.5) { overall = '买入'; action = '趋势向好，分批建仓'; position = 65; confidence = 75; }
@@ -453,6 +546,34 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
   else if (score >= -2) { overall = '高空防守'; action = '高位滞涨，逐步减仓'; position = 25; confidence = 50; }
   else if (score >= -3.5) { overall = '卖出'; action = '趋势走弱，果断减仓'; position = 50; confidence = 70; }
   else { overall = '强力卖出'; action = '全面转空，清仓避险'; position = 75; confidence = 85; }
+
+  // ===== 量价修正:让 overall/position/confidence 跟 vpDivergence / vpEvent 联动 =====
+  // 真背离 + 买入信号 → 必须降级,否则会出现"买入 75% + 量价背离"这种自相矛盾
+  if (vpDivergence) {
+    if (overall === '强力买入' || overall === '买入') {
+      overall = '高空防守'; action = '量价背离(价格涨但 OBV 流出),主力趁高出货,逢高减仓为主';
+      position = Math.min(position, 30);
+      confidence = Math.min(confidence, 50);
+    } else if (overall === '左侧试探') {
+      overall = '观望'; action = '量价背离,放弃左侧试仓,等待方向明朗';
+      position = 0; confidence = Math.min(confidence, 30);
+    } else if (overall === '超卖区') {
+      // 底部区域 + 背离不算背离(底部反弹的量价背离反而可能是机会) → 维持
+    }
+  }
+  // 缩量洗盘 + 买入 → 加分(健康回调后介入是好时机)
+  if (vpEvent === 'shrinkingWash') {
+    if (overall === '买入' || overall === '左侧试探') {
+      confidence = Math.min(100, confidence + 5);
+    }
+  }
+  // 假突破嫌疑(vpEvent === 'fangBreakout' 但 OBV 没跟上) → 已经在决策树里 vpDivergence=true,会被上面捕获
+  // 真放量突破(vpEvent === 'fangBreakout' 且无背离) → 加分
+  if (vpEvent === 'fangBreakout' && !vpDivergence) {
+    if (overall === '买入' || overall === '强力买入') {
+      confidence = Math.min(100, confidence + 5);
+    }
+  }
 
   // ATR（单次遍历）
   let atr = price * 0.02;
@@ -517,86 +638,6 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
     enabled: true, trigger: price + triggerMult * atr,
     step: stepMult * atr, currentStop: stopLoss
   };
-
-  // OBV + 量能（单次遍历）
-  let obv = 0, vol5sum = 0, vol10sum = 0, vol20sum = 0;
-  for (let i = 0; i < n; i++) {
-    if (i > 0) {
-      if (closes[i] > closes[i-1]) obv += vols[i];
-      else if (closes[i] < closes[i-1]) obv -= vols[i];
-    }
-    if (i >= n - 5) vol5sum += vols[i];
-    if (i >= n - 10) vol10sum += vols[i];
-    if (i >= n - 20) vol20sum += vols[i];
-  }
-  const volaRatio = vol10sum > 0 ? (vol5sum / 5) / (vol10sum / 10) : 1;
-
-  // ===== 量价决策树(深度版,基于"健康量价结构") =====
-  // 1) OBV 8日斜率(拉长窗口,避免单日波动误判)
-  let obvSlope8 = 0;
-  if (n >= 9) {
-    let cur = 0, past = 0;
-    for (let i = 0; i < n; i++) {
-      if (i >= n - 8) cur += (closes[i] > (closes[i-1] || closes[i]) ? vols[i] : (closes[i] < (closes[i-1] || closes[i]) ? -vols[i] : 0));
-      if (i === n - 9) past = cur;
-    }
-    obvSlope8 = (cur - past) / (Math.abs(past) + 1);
-  }
-  const isObvUp = obvSlope8 > 0.01;
-  const isObvDown = obvSlope8 < -0.01;
-
-  // 2) 价格、量能关键量
-  const lastVol = vols[n - 1];
-  const avgVol5 = vol5sum / 5;
-  const avgVol10 = vol10sum / 10;
-  const avgVol20 = vol20sum / 20;
-  const volMedian20 = (() => {
-    const arr = vols.slice(-20).slice().sort((a, b) => a - b);
-    return arr[Math.floor(arr.length / 2)];
-  })();
-  const recentHigh20 = highs ? Math.max(...highs.slice(-20)) : price * 1.05;
-  const priceUp1d = closes[n - 1] > closes[n - 2];
-  const priceSlope5 = n > 5 ? (price - closes[n - 5]) / closes[n - 5] : 0;
-  const pullbackFromHigh = (recentHigh20 - price) / recentHigh20;
-
-  // 3) 突破 / 放量 / 缩量 标记
-  const isBreakHigh = price > recentHigh20;
-  const isBigVolNow = lastVol > volMedian20 * 1.5;
-  const isShrinkingVol = avgVol5 < avgVol20 * 0.85;
-
-  // 4) 真背离:价格创新高 / 维持上行 + OBV 流出(单日 OBV 不算,要看 8 日斜率)
-  const isTrueDivergence = priceSlope5 > 0.02 && isObvDown;
-
-  // 5) 缩量洗盘:从近期高点小幅回撤(2%~8%)+ 成交量持续萎缩到 20日均量之下
-  const isShrinkingWash = pullbackFromHigh > 0.02 && pullbackFromHigh < 0.08 && isShrinkingVol && !priceUp1d;
-
-  // 6) 决策树(优先级:背离 > 假突破嫌疑 > 真突破 > 洗盘 > 其他)
-  let vpScore = 0, vpLabel = '量价中性', vpEvent = '', vpDivergence = false;
-  if (isTrueDivergence && isBreakHigh) {
-    // 价格虽突破前高,但 OBV 持续流出 —— 假突破嫌疑
-    vpScore = -1.5; vpLabel = '量价背离'; vpEvent = 'divergence'; vpDivergence = true;
-  } else if (isTrueDivergence) {
-    // 价格维持上行但 OBV 流出 —— 顶背离
-    vpScore = -1; vpLabel = '量价背离'; vpEvent = 'divergence'; vpDivergence = true;
-  } else if (isBreakHigh && isBigVolNow && isObvUp) {
-    // 真放量突破:价破前高 + 量超 1.5x + OBV 上行 —— 健康结构
-    vpScore = 1.5; vpLabel = '放量突破'; vpEvent = 'fangBreakout'; vpDivergence = false;
-  } else if (lastVol > avgVol20 * 1.5 && !priceUp1d) {
-    // 放量滞涨 / 下跌
-    vpScore = -1; vpLabel = '放量滞涨'; vpEvent = 'fangBreak'; vpDivergence = false;
-  } else if (isShrinkingWash) {
-    // 缩量洗盘:价小幅回撤 + 量萎缩 —— 健康回调
-    vpScore = 0.5; vpLabel = '缩量洗盘'; vpEvent = 'shrinkingWash'; vpDivergence = false;
-  } else if (lastVol > avgVol20 * 1.5 && priceUp1d && isObvUp) {
-    vpScore = 1; vpLabel = '量价齐升'; vpEvent = 'upTrend'; vpDivergence = false;
-  } else if (priceSlope5 > 0 && isObvUp) {
-    vpScore = 0.5; vpLabel = '温和上行'; vpEvent = 'upTrend'; vpDivergence = false;
-  } else {
-    vpScore = 0; vpLabel = '量价中性'; vpEvent = ''; vpDivergence = false;
-  }
-
-  // 兼容字段:旧版 obvInfo 仍带 direction,但用更细的斜率替代单一符号
-  const obvDirection = isObvUp ? 'up' : (isObvDown ? 'down' : 'neutral');
 
   // 回测（轻量版）
   let buySamples = 0, buyWin = 0, buySum = 0;
