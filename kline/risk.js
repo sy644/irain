@@ -20,7 +20,7 @@ const DEFAULT_RISK_LIMITS = {
 
   // 强制规则
   stopLossRequired:    true,    // 没有止损不允许买入
-  requireMarketFilter: false,   // 是否需要大盘环境通过（默认关闭）
+  requireMarketFilter: true,    // 开启大盘环境过滤（熊市禁止买入）
 };
 
 // ============================================
@@ -36,7 +36,132 @@ const DEFAULT_RISK_LIMITS = {
 // }
 
 // ============================================
-// 3. 单标的仓位上限约束
+// 3. Portfolio 持久化管理
+// ============================================
+const PORTFOLIO_KEY = 'portfolio_v1';
+const EQUITY_HISTORY_KEY = 'equity_history_v1';
+
+function loadPortfolio() {
+  try {
+    const raw = localStorage.getItem(PORTFOLIO_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { console.warn('加载持仓失败', e); }
+  return {
+    equity: 100000,
+    cash: 100000,
+    peakEquity: 100000,
+    positions: [],
+    lastUpdate: Date.now(),
+  };
+}
+
+function savePortfolio(p) {
+  try {
+    localStorage.setItem(PORTFOLIO_KEY, JSON.stringify({ ...p, lastUpdate: Date.now() }));
+  } catch (e) { console.warn('保存持仓失败', e); }
+}
+
+// 记录每日净值（用于回撤计算）
+function recordEquity(currentEquity) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    let history = [];
+    const raw = localStorage.getItem(EQUITY_HISTORY_KEY);
+    if (raw) history = JSON.parse(raw);
+    // 去重：同一天只保留最新
+    history = history.filter(h => h.date !== today);
+    history.push({ date: today, equity: currentEquity, timestamp: Date.now() });
+    // 保留最近 90 天
+    history = history.slice(-90);
+    localStorage.setItem(EQUITY_HISTORY_KEY, JSON.stringify(history));
+    return history;
+  } catch (e) { console.warn('记录净值失败', e); return []; }
+}
+
+function getPeakEquity() {
+  try {
+    const raw = localStorage.getItem(EQUITY_HISTORY_KEY);
+    if (!raw) return null;
+    const history = JSON.parse(raw);
+    return Math.max(...history.map(h => h.equity));
+  } catch { return null; }
+}
+
+// 更新持仓价格（根据最新报价）
+function updatePositionsPrices(quotes) {
+  const p = loadPortfolio();
+  let changed = false;
+  for (const pos of p.positions) {
+    const q = quotes[pos.code];
+    if (q && q.price > 0) {
+      pos.currentPrice = q.price;
+      pos.marketValue = pos.shares * q.price;
+      changed = true;
+    }
+  }
+  if (changed) {
+    // 重新计算总资产
+    const totalMarket = p.positions.reduce((s, pos) => s + (pos.marketValue || 0), 0);
+    p.equity = totalMarket + p.cash;
+    // 更新 peakEquity
+    if (p.equity > p.peakEquity) p.peakEquity = p.equity;
+    savePortfolio(p);
+  }
+  return p;
+}
+
+// 模拟买入（用于回测/演示，实际交易需接入券商API）
+function simulateBuy(code, name, price, shares, stopLoss) {
+  const p = loadPortfolio();
+  const cost = price * shares;
+  if (cost > p.cash) return { ok: false, message: '现金不足' };
+
+  const existing = p.positions.find(pos => pos.code === code);
+  if (existing) {
+    // 加仓：加权平均成本
+    const totalShares = existing.shares + shares;
+    existing.avgCost = (existing.avgCost * existing.shares + price * shares) / totalShares;
+    existing.shares = totalShares;
+    existing.stopLoss = stopLoss || existing.stopLoss;
+  } else {
+    p.positions.push({
+      code, name, shares, avgCost: price, currentPrice: price,
+      marketValue: cost, stopLoss: stopLoss || price * 0.97,
+      highWater: price, entryDate: new Date().toISOString().slice(0, 10),
+    });
+  }
+  p.cash -= cost;
+  p.equity = p.positions.reduce((s, pos) => s + (pos.marketValue || 0), 0) + p.cash;
+  if (p.equity > p.peakEquity) p.peakEquity = p.equity;
+  savePortfolio(p);
+  recordEquity(p.equity);
+  return { ok: true, portfolio: p };
+}
+
+// 模拟卖出
+function simulateSell(code, price, shares) {
+  const p = loadPortfolio();
+  const pos = p.positions.find(pos => pos.code === code);
+  if (!pos) return { ok: false, message: '无该持仓' };
+
+  const sellShares = Math.min(shares, pos.shares);
+  const proceeds = price * sellShares;
+  pos.shares -= sellShares;
+  if (pos.shares <= 0) {
+    p.positions = p.positions.filter(pos => pos.code !== code);
+  } else {
+    pos.marketValue = pos.shares * price;
+  }
+  p.cash += proceeds;
+  p.equity = p.positions.reduce((s, pos) => s + (pos.marketValue || 0), 0) + p.cash;
+  savePortfolio(p);
+  recordEquity(p.equity);
+  return { ok: true, portfolio: p };
+}
+
+// ============================================
+// 4. 单标的仓位上限约束
+// ============================================
 // ============================================
 function capSinglePosition(signalPosition, limits = DEFAULT_RISK_LIMITS) {
   // signalPosition: 0~100（百分比）
@@ -210,7 +335,9 @@ function detectDivergence(closes, obv) {
 // ============================================
 // 12. 主入口：组合所有风控
 // ============================================
-function applyRiskLimits(signal, portfolio, limits = DEFAULT_RISK_LIMITS) {
+function applyRiskLimits(signal, portfolioInput, limits = DEFAULT_RISK_LIMITS) {
+  // 自动读取真实 portfolio，外部传入的可覆盖
+  const portfolio = portfolioInput || loadPortfolio();
   const result = {
     ...signal,
     originalPosition: signal.position,
@@ -246,7 +373,15 @@ function applyRiskLimits(signal, portfolio, limits = DEFAULT_RISK_LIMITS) {
       result.position = totalCap * 100;
     }
   }
-  // 4. 止损检查（仅对买入信号）：太宽时自适应收紧，不强制清仓
+  // 4. 大盘环境过滤（买入信号时检查）
+  if (limits.requireMarketFilter && ['买入', '强力买入', '左侧试探'].includes(signal.overall)) {
+    // 大盘过滤结果通过 signal._marketEnv 传入（由外部异步检查）
+    if (signal._marketEnv && !signal._marketEnv.ok && signal._marketEnv.severity === 'BLOCK_BUYS') {
+      result.riskChecks.push(signal._marketEnv.message);
+      result.position = Math.min(result.position, 20); // 熊市最多 20% 试探
+    }
+  }
+  // 5. 止损检查（仅对买入信号）：太宽时自适应收紧，不强制清仓
   if (['买入', '强力买入', '左侧试探'].includes(signal.overall) && limits.stopLossRequired) {
     const slCheck = checkSingleLoss(signal.price, signal.tpSl && signal.tpSl.stopLoss, limits);
     if (!slCheck.ok) {
@@ -303,5 +438,18 @@ if (typeof module !== 'undefined' && module.exports) {
     detectDivergence,
     applyRiskLimits,
     computeRiskLevel,
+    loadPortfolio, savePortfolio, recordEquity, getPeakEquity,
+    updatePositionsPrices, simulateBuy, simulateSell,
   };
+}
+if (typeof window !== 'undefined') {
+  window.loadPortfolio = loadPortfolio;
+  window.savePortfolio = savePortfolio;
+  window.recordEquity = recordEquity;
+  window.getPeakEquity = getPeakEquity;
+  window.updatePositionsPrices = updatePositionsPrices;
+  window.simulateBuy = simulateBuy;
+  window.simulateSell = simulateSell;
+  window.updateTrailingStop = updateTrailingStop;
+  window.checkMarketEnvironment = checkMarketEnvironment;
 }

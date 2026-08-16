@@ -958,18 +958,48 @@ async function initStock(code) {
 
   // 接入风控层
   try {
-    const portfolio = {
-      equity: 100000,
-      cash: 100000,
-      peakEquity: 100000,
-      positions: []
-    };
+    // 1. 加载真实 portfolio
+    let portfolio = loadPortfolio();
+
+    // 2. 更新持仓价格（用最新报价）
+    if (portfolio.positions.length > 0 && basic && basic.price > 0) {
+      const pos = portfolio.positions.find(p => p.code === code);
+      if (pos) {
+        pos.currentPrice = basic.price;
+        pos.marketValue = pos.shares * basic.price;
+        // 移动止损更新
+        if (sum.tpSl && sum.tpSl.trailingStop) {
+          updateTrailingStop(pos, sum.tpSl);
+        }
+      }
+      // 重新计算总资产
+      const totalMarket = portfolio.positions.reduce((s, p) => s + (p.marketValue || 0), 0);
+      portfolio.equity = totalMarket + portfolio.cash;
+      if (portfolio.equity > portfolio.peakEquity) portfolio.peakEquity = portfolio.equity;
+      savePortfolio(portfolio);
+    }
+
+    // 3. 大盘环境过滤（异步）
+    let marketEnv = null;
+    try {
+      marketEnv = await checkMarketEnvironment(fetchKLine);
+      sum._marketEnv = marketEnv;
+    } catch (e) { console.warn('大盘过滤检查失败', e); }
+
+    // 4. 应用风控
     const limits = window.__riskLimits || DEFAULT_RISK_LIMITS;
     const riskResult = applyRiskLimits(sum, portfolio, limits);
     sum.position = riskResult.position;
     sum.riskChecks = riskResult.riskChecks || [];
     sum.blocked = riskResult.blocked;
     sum.blockReasons = riskResult.blockReasons || [];
+    sum.riskLevel = riskResult.riskLevel;
+    sum.stopLossBreaches = riskResult.stopLossBreaches;
+
+    // 5. 记录净值
+    if (portfolio.equity > 0) {
+      recordEquity(portfolio.equity);
+    }
   } catch (e) {
     console.warn('风控计算失败', e);
   }
