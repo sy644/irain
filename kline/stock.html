@@ -1442,3 +1442,165 @@ async function initStock(code) {
 
   // 核心信号计算
   const sum = summarize(closes, highs, lows, opens, vols, pivots, basic);
+  const currentPrice = closes[closes.length - 1];
+  const prevClose = data[data.length - 2] ? data[data.length - 2].close : currentPrice;
+  const change = currentPrice - prevClose;
+  const changePct = (change / prevClose) * 100;
+
+  // ===== 阶段1：立即渲染核心页面 =====
+  renderPage(data, sum, pivots, currentPrice, change, changePct);
+  drawChart(data, sum, pivots);
+  bindNameEditor(code);
+  bindFullscreen();
+
+  // 数据来源角标
+  const badge = document.getElementById('dataBadge');
+  if (badge) {
+    if (dataSource === 'history') { badge.textContent = '历史缓存'; badge.className = 'data-badge history'; }
+    else if (dataSource === 'partial-history') { badge.textContent = '部分历史'; badge.className = 'data-badge partial-history'; }
+    else { badge.textContent = '实时'; badge.className = 'data-badge'; }
+  }
+
+  // ===== 阶段2：延迟加载量化、风控、基本面等 =====
+  setTimeout(() => {
+    try {
+      const qm = computeQuantMetrics(data, sum);
+      applyQuantToSignal(sum, qm);
+      renderQuantMetrics(data, sum);
+      const verdictBody = document.querySelector('.verdict-body');
+      if (verdictBody && sum.quantWarnings && sum.quantWarnings.length) {
+        let qi = verdictBody.querySelector('.quant-impact');
+        if (!qi) { qi = document.createElement('div'); qi.className = 'quant-impact'; verdictBody.appendChild(qi); }
+        qi.innerHTML = '<div class="qi-head">📈 量化战略联动</div>' + sum.quantWarnings.map(w => `<div class="qi-item">${w}</div>`).join('');
+      }
+    } catch (e) { console.warn('量化诊断失败', e); }
+
+    try {
+      const stock = (loadStocks().find(s => s.code === code) || { code, name: code });
+      const last = data[data.length - 1];
+      const prevLast = data.length > 1 ? data[data.length - 2] : last;
+      HistoryTable.appendLast({
+        date: last.date, code, name: stock.name,
+        open: last.open, high: last.high, low: last.low, close: last.close,
+        change: last.close - prevLast.close,
+        changePct: ((last.close - prevLast.close) / prevLast.close) * 100,
+        volume: last.volume,
+        amount: last.volume * (last.high + last.low + last.close) / 3,
+        overall: sum.overall, position: sum.position, confidence: sum.confidence,
+        netScore: sum.netScore, trend: sum.trend, vpLabel: sum.vpLabel,
+        stopLoss: sum.tpSl && sum.tpSl.stopLoss,
+        takeProfitR1: sum.tpSl && sum.tpSl.takeProfitLevels && sum.tpSl.takeProfitLevels[0] && sum.tpSl.takeProfitLevels[0].price,
+        dataSource, updatedAt: new Date().toISOString(),
+      });
+    } catch (e) { console.warn('写历史表失败', e); }
+
+    try {
+      let portfolio = loadPortfolio();
+      if (portfolio.positions.length > 0) {
+        const pos = portfolio.positions.find(p => p.code === code);
+        if (pos && currentPrice > 0) {
+          pos.currentPrice = currentPrice;
+          pos.marketValue = pos.shares * currentPrice;
+          if (sum.tpSl && sum.tpSl.trailingStop) updateTrailingStop(pos, sum.tpSl);
+        }
+        const totalMarket = portfolio.positions.reduce((s, p) => s + (p.marketValue || 0), 0);
+        portfolio.equity = totalMarket + portfolio.cash;
+        if (portfolio.equity > portfolio.peakEquity) portfolio.peakEquity = portfolio.equity;
+        savePortfolio(portfolio);
+      }
+      checkMarketEnvironment(fetchKLine).then(me => { sum._marketEnv = me; }).catch(() => {});
+      const limits = window.__riskLimits || DEFAULT_RISK_LIMITS;
+      const riskResult = applyRiskLimits(sum, portfolio, limits);
+      sum.position = riskResult.position;
+      sum.riskChecks = riskResult.riskChecks || [];
+      sum.blocked = riskResult.blocked;
+      sum.blockReasons = riskResult.blockReasons || [];
+      sum.riskLevel = riskResult.riskLevel;
+      sum.stopLossBreaches = riskResult.stopLossBreaches;
+      if (portfolio.equity > 0) recordEquity(portfolio.equity);
+      const posFill = document.querySelector('.pos-bar .fill');
+      const posLabel = document.querySelector('.pos-strip .v');
+      if (posFill) posFill.style.width = sum.position + '%';
+      if (posLabel) {
+        const posText = sum.position >= 80 ? '满仓' : sum.position >= 50 ? '半仓' : sum.position >= 25 ? '轻仓' : sum.position > 0 ? '极轻仓' : '空仓';
+        posLabel.textContent = posText + ' ' + sum.position + '%';
+        posLabel.style.color = sum.position >= 50 ? '#e53e3e' : sum.position < 25 ? '#38a169' : '#1a202c';
+      }
+    } catch (e) { console.warn('风控计算失败', e); }
+
+    fetchBasic(code).then(basicData => {
+      if (!basicData) {
+        const lastRow = HistoryTable.getLatest(code);
+        if (lastRow && (lastRow.pe || lastRow.pb || lastRow.totalCap)) {
+          basicData = { pe: lastRow.pe, pb: lastRow.pb, totalCap: lastRow.totalCap, turnover: lastRow.turnover, high52w: lastRow.high, low52w: lastRow.low, upperLimit: lastRow.close * 1.1, lowerLimit: lastRow.close * 0.9 };
+        }
+      }
+      const fundContainer = document.getElementById('fundamentals');
+      if (fundContainer && basicData && (basicData.pe || basicData.pb || basicData.totalCap)) {
+        fundContainer.innerHTML = `
+          <div class="f-cell"><div class="k">PE(动)</div><div class="v">${basicData.pe ? basicData.pe.toFixed(2) : '—'}</div><div class="d">市盈率</div></div>
+          <div class="f-cell"><div class="k">PB</div><div class="v">${(basicData.pb && basicData.pb > 0) ? basicData.pb.toFixed(2) : '—'}</div><div class="d">市净率</div></div>
+          <div class="f-cell"><div class="k">总市值</div><div class="v">${basicData.totalCap ? (basicData.totalCap/10000).toFixed(2) + '万亿' : '—'}</div><div class="d">市值</div></div>
+          <div class="f-cell"><div class="k">换手率</div><div class="v">${basicData.turnover ? basicData.turnover.toFixed(2)+'%' : '—'}</div><div class="d">当日</div></div>
+          <div class="f-cell"><div class="k">52周高</div><div class="v">${basicData.high52w ? basicData.high52w.toFixed(2) : '—'}</div><div class="d">最高价</div></div>
+          <div class="f-cell"><div class="k">52周低</div><div class="v">${basicData.low52w ? basicData.low52w.toFixed(2) : '—'}</div><div class="d">最低价</div></div>
+          <div class="f-cell"><div class="k">涨停</div><div class="v" style="color:var(--up)">${basicData.upperLimit ? basicData.upperLimit.toFixed(2) : '—'}</div><div class="d">+10%</div></div>
+          <div class="f-cell"><div class="k">跌停</div><div class="v" style="color:var(--down)">${basicData.lowerLimit ? basicData.lowerLimit.toFixed(2) : '—'}</div><div class="d">-10%</div></div>
+        `;
+      } else if (fundContainer) {
+        fundContainer.innerHTML = `<div style="grid-column:1/-1;color:var(--text-mute);font-size:11px;text-align:center;padding:16px 0">该标的无基本面数据(指数/ETF/基金) · 仅技术面参考</div>`;
+      }
+      updateVolStrip(basicData, sum);
+    }).catch(() => {});
+  }, 50);
+}
+
+// ================================================================
+// ★★★ 风控面板初始化（与您原版一致）★★★
+// ================================================================
+function initRiskPanel() {
+  const modal  = document.getElementById('riskModal');
+  const btn    = document.getElementById('btnRisk');
+  const close  = document.getElementById('riskClose');
+  const cancel = document.getElementById('riskCancel');
+  const save   = document.getElementById('riskSave');
+  const reset  = document.getElementById('riskReset');
+  applyToUI(loadRiskLimits());
+  const open = () => modal.classList.add('show');
+  const shut = () => modal.classList.remove('show');
+  btn.onclick = open; close.onclick = shut; cancel.onclick = shut;
+  modal.onclick = (e) => { if (e.target === modal) shut(); };
+  document.querySelectorAll('#riskModal input[type="range"]').forEach(inp => {
+    inp.oninput = () => { syncValLabels(); document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active')); };
+  });
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.onclick = () => { document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); applyToUI(PRESETS[btn.dataset.preset]); };
+  });
+  save.onclick = () => {
+    const limits = readFromUI(); saveRiskLimits(limits); window.__riskLimits = limits;
+    btn.classList.add('has-active'); setTimeout(() => btn.classList.remove('has-active'), 800); shut();
+  };
+  reset.onclick = () => applyToUI(PRESETS.balanced);
+  window.__riskLimits = loadRiskLimits();
+}
+initRiskPanel();
+
+// ================================================================
+// ★★★ 启动 ★★★
+// ================================================================
+const code = getCodeFromURL();
+if (!code) {
+  document.getElementById('root').innerHTML = `<div class="empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>缺少股票代码 · <a href="index.html" style="color:var(--accent);text-decoration:underline">返回添加</a></div>`;
+} else {
+  initStock(code);
+}
+
+// 预拉取按钮（占位）
+document.getElementById('btnPrefetch').onclick = () => {
+  toast('预拉取功能已集成至缓存');
+};
+
+console.log('📊 股票详情页（指标优化完整版）已启动');
+</script>
+</body>
+</html>
