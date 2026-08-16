@@ -2364,26 +2364,7 @@
                 card.addEventListener('click', () => {
                     if (card.classList.contains('deleting')) return;
                     const code = card.dataset.code;
-                    if (!code) return;
-
-                    // ===== 优化：把已计算好的数据快照传给详情页，实现秒开 =====
-                    const snapshot = stockDataMap[code];
-                    if (snapshot && snapshot.price !== '--') {
-                        localStorage.setItem('stock_detail_snapshot', JSON.stringify({
-                            code: code,
-                            price: snapshot.price,
-                            change: snapshot.change,
-                            changePercent: snapshot.changePercent,
-                            signal: snapshot.signal,
-                            action: snapshot.action,
-                            position: snapshot.position,
-                            confidence: snapshot.confidence,
-                            tpSl: snapshot.tpSl || null,
-                            timestamp: Date.now()
-                        }));
-                    }
-
-                    location.href = `stock.html?code=${encodeURIComponent(code)}`;
+                    if (code) location.href = `stock.html?code=${encodeURIComponent(code)}`;
                 });
             });
 
