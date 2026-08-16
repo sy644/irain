@@ -1,41 +1,64 @@
 // ============================================================
-// 组合止盈策略 · 优化版v7（完整错误保护版）
-// 可直接覆盖原 app.js 全部内容
+// 组合止盈策略 · 优化版v7 数据加载容错增强版
+// 修复：数组越界、空highs/lows、长度不足、计算崩溃、字段空值报错
 // ============================================================
-
-// ---------- 核心策略函数（带 try-catch 保护） ----------
 function simpleSignal_v7(closes, highs, lows) {
     try {
-        // -------- 数据校验 --------
-        if (!Array.isArray(closes) || closes.length < 20) {
-            return {
-                overall: '数据不足',
-                action: 'K线不足（至少20根）',
-                position: 0,
-                confidence: 0,
-                tpSl: null,
-                score: -999,
-                trendOk: false,
-                error: 'CLOSES_TOO_SHORT'
+        // 第一层：基础数组空值校验
+        if (!Array.isArray(closes) || closes.length === 0) {
+            return { 
+                overall: '数据异常', 
+                action: '收盘价数组为空，加载失败', 
+                position: 0, 
+                confidence: 0, 
+                tpSl: null, 
+                score: -999, 
+                trendOk: false 
             };
         }
-        // 若高低价缺失或长度不一致，则用收盘价估算（避免报错）
-        if (!highs || !lows || highs.length !== closes.length || lows.length !== closes.length) {
-            highs = closes.map(p => p * 1.01);
-            lows = closes.map(p => p * 0.99);
+        // K线最小长度校验，不足20直接返回
+        if (closes.length < 20) {
+            return { 
+                overall: '数据不足', 
+                action: `K线仅${closes.length}根，至少需要20根`, 
+                position: 0, 
+                confidence: 0, 
+                tpSl: null, 
+                score: -999, 
+                trendOk: false 
+            };
+        }
+        const n = closes.length;
+        const price = Number(closes[n - 1]) || 0;
+        if (price <= 0) {
+            return { 
+                overall: '数据异常', 
+                action: '最新收盘价无效，无法计算信号', 
+                position: 0, 
+                confidence: 0, 
+                tpSl: null, 
+                score: -999, 
+                trendOk: false 
+            };
         }
 
-        const n = closes.length;
-        const price = closes[n - 1];
+        // ---- 趋势均线信号（增加数组长度兜底） ----
+        // MA5
+        const ma5Slice = closes.slice(-5);
+        const ma5 = ma5Slice.reduce((a, b) => a + (Number(b) || 0), 0) / ma5Slice.length;
+        // MA20
+        const ma20Slice = closes.slice(-20);
+        const ma20 = ma20Slice.reduce((a, b) => a + (Number(b) || 0), 0) / ma20Slice.length;
+        // MA60 长度不足复用MA20兜底
+        const ma60Slice = closes.length >= 60 ? closes.slice(-60) : ma20Slice;
+        const ma60 = ma60Slice.reduce((a, b) => a + (Number(b) || 0), 0) / ma60Slice.length;
 
-        // ---- 趋势均线信号 ----
-        const ma5 = closes.slice(-5).reduce((a, b) => a + b, 0) / 5;
-        const ma20 = closes.slice(-20).reduce((a, b) => a + b, 0) / 20;
-        const ma60 = closes.length >= 60 ? closes.slice(-60).reduce((a, b) => a + b, 0) / 60 : ma20;
-        const prev = closes[n - 2] || closes[n - 1];
-        const changePct = (price - prev) / prev * 100;
-        const pct5 = (price - closes[n - 5]) / closes[n - 5] * 100;
+        const prev = Number(closes[n - 2]) || price;
+        const changePct = prev === 0 ? 0 : ((price - prev) / prev) * 100;
+        const fiveDayClose = Number(closes[Math.max(0, n - 5)]) || price;
+        const pct5 = fiveDayClose === 0 ? 0 : ((price - fiveDayClose) / fiveDayClose) * 100;
 
+        // 计分逻辑不变
         let score = 0;
         if (price > ma5) score += 1.5; else score -= 1.5;
         if (price > ma20) score += 1.2; else score -= 1.2;
@@ -45,6 +68,7 @@ function simpleSignal_v7(closes, highs, lows) {
         if (changePct > 1) score += 0.5; else if (changePct < -1) score -= 0.5;
         if (pct5 > 3) score += 1; else if (pct5 < -3) score -= 1;
 
+        // 信号档位判定
         let overall, action, position, confidence;
         if (score >= 5) { overall = '强力买入'; action = '强势突破，积极跟进'; position = 85; confidence = 90; }
         else if (score >= 3.5) { overall = '买入'; action = '趋势向好，分批建仓'; position = 65; confidence = 75; }
@@ -55,14 +79,19 @@ function simpleSignal_v7(closes, highs, lows) {
         else if (score >= -3.5) { overall = '卖出'; action = '趋势走弱，果断减仓'; position = 50; confidence = 70; }
         else { overall = '强力卖出'; action = '全面转空，清仓避险'; position = 75; confidence = 85; }
 
-        // ---- ATR 计算（安全处理） ----
+        // ---- ATR计算：增加highs/lows空数组、长度不匹配兜底 ----
         let atr = price * 0.02;
-        if (highs && lows && highs.length === closes.length && lows.length === closes.length) {
+        let validHLC = false;
+        if (Array.isArray(highs) && Array.isArray(lows) && highs.length === lows.length && highs.length === closes.length) {
+            validHLC = true;
             const tr = [];
             for (let i = 1; i < closes.length; i++) {
-                const hl = highs[i] - lows[i];
-                const hc = Math.abs(highs[i] - closes[i - 1]);
-                const lc = Math.abs(lows[i] - closes[i - 1]);
+                const h = Number(highs[i]) || price;
+                const l = Number(lows[i]) || price;
+                const cPrev = Number(closes[i - 1]) || price;
+                const hl = h - l;
+                const hc = Math.abs(h - cPrev);
+                const lc = Math.abs(l - cPrev);
                 tr.push(Math.max(hl, hc, lc));
             }
             const period = 14;
@@ -75,45 +104,56 @@ function simpleSignal_v7(closes, highs, lows) {
             }
         }
 
-        const high = Math.max(...highs.slice(-20));
-        const low = Math.min(...lows.slice(-20));
+        // ---- 短期高低点、枢轴：无高低价直接用价格兜底 ----
+        let high, low;
+        if (validHLC) {
+            high = Math.max(...highs.slice(-20).map(x => Number(x) || price));
+            low = Math.min(...lows.slice(-20).map(x => Number(x) || price));
+        } else {
+            high = price * 1.05;
+            low = price * 0.95;
+        }
         const pp = (high + low + price) / 3;
         const s1 = 2 * pp - high;
         const r1 = 2 * pp - low;
         const r2 = pp + (high - low);
 
-        // ---- v7 核心逻辑 ----
+        // v7 核心逻辑
         const trendOk = price > ma20 && ma5 > ma20;
-        const momentum20 = (price - closes[Math.max(0, n - 21)]) / closes[Math.max(0, n - 21)];
-        const atrPct = atr / price;
+        // 20日动量兜底，防止n-21越界
+        const momentumStartIdx = Math.max(0, n - 21);
+        const close20Ago = Number(closes[momentumStartIdx]) || price;
+        const momentum20 = close20Ago === 0 ? 0 : (price - close20Ago) / close20Ago;
+        const atrPct = price === 0 ? 0 : atr / price;
         const isStrongTrend = momentum20 > 0.10;
         const isVeryStrong = momentum20 > 0.15;
 
+        // 波动率自适应止损倍数
         let stopMult = 2.0;
         if (atrPct > 0.04) stopMult = 3.0;
         else if (atrPct > 0.035) stopMult = 2.5;
-
         const stopByATR = price - stopMult * atr;
         const stopByS1 = s1 || (price * 0.97);
         const stopLoss = Math.min(stopByATR, stopByS1, price * 0.95);
 
+        // 止盈倍数
         let mult1 = 1.0, mult2 = 2.0, mult3 = 3.5;
         if (isVeryStrong) {
             mult1 = 1.5; mult2 = 3.0; mult3 = 5.25;
         }
-
+        // 波动率系数
         let volMult = 1.0;
         if (atrPct < 0.015) volMult = 1.5;
         else if (atrPct > 0.04) volMult = 0.8;
 
+        // 三级止盈
         const atr1 = price + mult1 * atr * volMult;
         const atr2 = price + mult2 * atr * volMult;
         const atr3 = price + mult3 * atr * volMult;
 
+        // 减仓比例
         let l1Ratio = 0.30, l2Ratio = 0.30, l3Ratio = 0.40;
-        if (isStrongTrend) {
-            l3Ratio = 0.30;
-        }
+        if (isStrongTrend) l3Ratio = 0.30;
 
         const takeProfitLevels = [
             { price: atr1, ratio: l1Ratio, label: `+${(mult1 * volMult).toFixed(2)}ATR(短线)` },
@@ -121,13 +161,13 @@ function simpleSignal_v7(closes, highs, lows) {
             { price: atr3, ratio: l3Ratio, label: `+${(mult3 * volMult).toFixed(2)}ATR(长线)` }
         ];
 
+        // 移动止损触发参数
         let triggerMult = 2.0, stepMult = 2.0;
         if (isVeryStrong) {
             triggerMult = 4.0; stepMult = 3.0;
         } else if (isStrongTrend) {
             triggerMult = 3.0; stepMult = 3.0;
         }
-
         const trailingStop = {
             enabled: true,
             trigger: price + triggerMult * atr,
@@ -135,6 +175,7 @@ function simpleSignal_v7(closes, highs, lows) {
             currentStop: stopLoss
         };
 
+        // 仓位自适应比例
         let positionPct = 1.0;
         if (atrPct < 0.015) positionPct = 1.0;
         else if (atrPct < 0.035) positionPct = 0.8;
@@ -142,7 +183,6 @@ function simpleSignal_v7(closes, highs, lows) {
         else positionPct = 0.3;
 
         const trendReserve = isStrongTrend ? 0.10 : 0.0;
-
         const tpSl = {
             stopLoss,
             takeProfitLevels,
@@ -161,55 +201,58 @@ function simpleSignal_v7(closes, highs, lows) {
             stopMult,
             triggerMult,
             stepMult,
-            note: '优化版v7：趋势过滤 + 分级移动止损 + 波动率仓位 + 自适应止损'
+            note: 'v7增强容错：空值/短K线/高低价缺失兜底，防加载崩溃'
         };
 
         return { overall, action, position, confidence, tpSl, score, trendOk };
-
     } catch (err) {
-        console.error('[simpleSignal_v7] 异常:', err);
-        // 返回安全结构，页面不会白屏
+        // 全局捕获计算异常，返回标准化错误，不中断页面加载
+        console.error('simpleSignal_v7计算失败：', err.message);
         return {
-            overall: '计算异常',
-            action: '请检查控制台错误信息',
+            overall: '计算失败',
+            action: `指标运算异常：${err.message}`,
             position: 0,
             confidence: 0,
             tpSl: null,
             score: -999,
-            trendOk: false,
-            error: err.message
+            trendOk: false
         };
     }
 }
 
-// ---------- 止盈执行（同样加保护） ----------
+// ============================================================
+// 持仓止盈执行配套逻辑 · 容错增强
+// ============================================================
 function calcSellShares_v7(trade, currentPrice, currentDate) {
     try {
-        if (!trade || !trade.tpSl || !trade.tpSl.takeProfitLevels) {
-            console.warn('calcSellShares_v7: 缺少 tpSl 或止盈档位');
+        // 前置判空兜底
+        if (!trade || !trade.tpSl || !Array.isArray(trade.tpSl.takeProfitLevels)) {
+            console.warn('calcSellShares_v7：交易对象或止盈档位缺失');
             return trade;
         }
-        const { initial_shares, remaining_shares, tpSl, levels_executed = {}, sell_records = [] } = trade;
+        const { initial_shares = 0, remaining_shares = 0, tpSl } = trade;
+        const levels_executed = trade.levels_executed || {};
+        const sell_records = trade.sell_records || [];
         const targets = tpSl.takeProfitLevels;
         const levelMap = { L1: 0, L2: 1, L3: 2 };
 
         for (const levelKey of ['L1', 'L2', 'L3']) {
             const idx = levelMap[levelKey];
-            if (levels_executed[levelKey]) continue;
+            if (levels_executed[levelKey] || idx >= targets.length) continue;
             const target = targets[idx];
             if (!target || currentPrice < target.price) continue;
 
-            let sellRatio = target.ratio;
-            if (levelKey === 'L3' && tpSl.isStrongTrend) {
-                sellRatio = 0.30;
-            }
+            let sellRatio = target.ratio || 0;
+            if (levelKey === 'L3' && tpSl.isStrongTrend) sellRatio = 0.30;
 
             const sellNum = Math.floor(initial_shares * sellRatio);
             const realSell = Math.min(sellNum, remaining_shares);
             if (realSell <= 0) continue;
 
-            trade.remaining_shares -= realSell;
+            trade.remaining_shares = remaining_shares - realSell;
+            trade.levels_executed = levels_executed;
             trade.levels_executed[levelKey] = true;
+            trade.sell_records = sell_records;
             trade.sell_records.push({
                 date: currentDate,
                 price: currentPrice,
@@ -226,33 +269,24 @@ function calcSellShares_v7(trade, currentPrice, currentDate) {
         }
         return trade;
     } catch (err) {
-        console.error('[calcSellShares_v7] 异常:', err);
-        return trade; // 保持原状，避免中断
+        console.error('calcSellShares_v7执行报错：', err);
+        return trade;
     }
 }
 
-// ---------- 建仓判断（加保护） ----------
+// ============================================================
+// v7 建仓判断辅助函数 · 空值容错
+// ============================================================
 function canOpenPosition_v7(signal, daysSinceLastExit, cooldownDays = 5) {
     try {
         if (!signal || !signal.tpSl) return false;
-        if (daysSinceLastExit < cooldownDays) return false;
+        if (typeof daysSinceLastExit !== 'number' || daysSinceLastExit < cooldownDays) return false;
         if (!signal.trendOk) return false;
-
         const atrPct = signal.tpSl.atrPct || 0;
         const minScore = atrPct > 0.035 ? 3.5 : 2.0;
-        return signal.score >= minScore;
+        return Number(signal.score) >= minScore;
     } catch (err) {
-        console.error('[canOpenPosition_v7] 异常:', err);
+        console.error('canOpenPosition_v7校验失败：', err);
         return false;
     }
 }
-
-// ============================================================
-// 使用说明（替换后请检查以下调用处）
-// ============================================================
-// 1. 所有调用 simpleSignal() 的地方改为 simpleSignal_v7()
-// 2. 建仓判断：canOpenPosition_v7(signal, daysSinceLastExit, 5)
-// 3. 止盈执行：calcSellShares_v7(trade, price, date)
-// 4. 详情页渲染前请判断 signal.tpSl 是否存在
-// 5. 若仍加载失败，查看控制台具体报错信息
-// ============================================================
