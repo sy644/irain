@@ -1,8 +1,29 @@
 // ================================================================
-// ★★★ 增强版 summarize（集成布林带+均线趋势判断）★★★
+// ★★★ 完整增强版 summarize（集成布林带+均线+量价）★★★
 // ================================================================
 function summarize(closes, highs, lows, opens, vols, pivots, basic) {
   const n = closes.length;
+  // ---- 数据不足时返回中性信号，防止崩溃 ----
+  if (n < 5) {
+    return {
+      overall: '观望', action: '数据不足', position: 0, confidence: 10,
+      score: 0, netScore: 0,
+      trend: '震荡', trendScore: 0, trendStrength: 0, trendWeight: 1,
+      bollInfo: { upper: 0, mid: 0, lower: 0, position: 0.5, width: 0, widthChange: 0, isExpanding: false, isContracting: false },
+      maInfo: { ma5: 0, ma10: 0, ma20: 0, ma60: 0, alignment: 0, slope5: 0 },
+      pivotLabel: '中性', pivotBreakdown: null, pivotBreakout: null,
+      vpScore: 0, vpLabel: '量价中性', vpEvent: '', vpDivergence: false,
+      obvInfo: { direction: 'neutral', value: 0, slope8: 0 },
+      volaRatio: 1, anomalyIdx: [],
+      backtest: { buySamples: 0, buyWinRate: 0, buyAvgRet: 0, lookback: 0, holdDays: 0 },
+      tpSl: { stopLoss: 0, takeProfitLevels: [], trailingStop: { enabled: false, trigger: 0, step: 0, currentStop: 0 }, atr: 0, s1: 0, r1: 0, r2: 0, hasR2: false, isStrongTrend: false, momentum20: 0, atrPct: 0, stopMult: 2, triggerMult: 2, stepMult: 1.5, note: '数据不足' },
+      trendGroup: [], momentumGroup: [], volaGroup: [], volGroup: [],
+      buyScore: 0, sellScore: 0,
+      mainForce: null, fundamentals: null,
+      trendDiagnosis: { direction: '震荡', strength: 0, score: 0, bollPosition: 0.5, maAlignment: 0, adx: 0 }
+    };
+  }
+
   const price = closes[n - 1];
 
   // ---- 均线计算 ----
@@ -23,36 +44,36 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
   const pct5 = n > 5 ? (price - closes[n - 5]) / closes[n - 5] * 100 : 0;
 
   // ---- 布林带（20日，2倍标准差） ----
-  const bollPeriod = 20;
+  const bollPeriod = Math.min(20, n);
   const bollSlice = closes.slice(-bollPeriod);
   const bollMid = bollSlice.reduce((a,b)=>a+b,0) / bollSlice.length;
   let bollStd = 0;
   for (const v of bollSlice) { const d = v - bollMid; bollStd += d*d; }
   bollStd = Math.sqrt(bollStd / bollSlice.length);
-  const bollUpper = bollMid + 2 * bollStd;
-  const bollLower = bollMid - 2 * bollStd;
-  const bollWidth = bollStd / bollMid;
+  const bollUpper = bollMid + 2 * (bollStd || 0.001);
+  const bollLower = bollMid - 2 * (bollStd || 0.001);
+  const bollWidth = (bollStd || 0.001) / (bollMid || 0.001);
   const bollPosition = (price - bollLower) / (bollUpper - bollLower || 1);
 
-  // ---- 布林带宽变化 ----
-  let bollWidthRecent = 0, bollWidthPast = 0;
+  // ---- 布林带宽变化（仅当数据足够时） ----
+  let bollWidthChange = 0;
   if (n >= 30) {
     const recentSlice = closes.slice(-5);
     const pastSlice = closes.slice(-10, -5);
     const calcWidth = (arr) => {
-      const m = arr.reduce((a,b)=>a+b,0)/arr.length;
+      const m = arr.reduce((a,b)=>a+b,0)/arr.length || 1;
       let s = 0;
       for (const v of arr) { const d = v-m; s+=d*d; }
       return Math.sqrt(s/arr.length) / m;
     };
-    bollWidthRecent = calcWidth(recentSlice);
-    bollWidthPast = calcWidth(pastSlice);
+    const bwRecent = calcWidth(recentSlice);
+    const bwPast = calcWidth(pastSlice);
+    bollWidthChange = bwRecent - bwPast;
   }
-  const bollWidthChange = bollWidthRecent - bollWidthPast;
 
   // ---- 均线排列强度 ----
   const maOrder = (ma5 > ma10) + (ma10 > ma20) + (ma20 > ma60);
-  const ma5Slope = n > 10 ? (ma5 - closes[n-6]) / closes[n-6] : 0;
+  const ma5Slope = n > 10 ? (ma5 - closes[n-6]) / (closes[n-6] || 0.001) : 0;
 
   // ---- 趋势综合评分 ----
   let trendScore = 0;
@@ -68,6 +89,7 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
   if (bollWidthChange < -0.001 && Math.abs(bollPosition - 0.5) < 0.15) trendScore -= 0.5;
   if (ma5Slope > 0.01) trendScore += 0.6;
   else if (ma5Slope < -0.01) trendScore -= 0.6;
+
   const recentHigh20 = highs ? Math.max(...highs.slice(-20)) : price * 1.05;
   const recentLow20 = lows ? Math.min(...lows.slice(-20)) : price * 0.95;
   const pricePosition20 = (price - recentLow20) / (recentHigh20 - recentLow20 || 1);
@@ -86,7 +108,7 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
   else if (trendScore >= -4) { trendDir = '空头'; trendStrength = 60; }
   else { trendDir = '强空头'; trendStrength = 80; }
 
-  // ---- 量价因子（原逻辑不变） ----
+  // ---- 量价因子（完整版） ----
   const obvSeries = new Array(n).fill(0);
   for (let i = 0; i < n; i++) {
     if (i === 0) { obvSeries[i] = 0; continue; }
@@ -145,7 +167,7 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
     vpScore += 0.5;
     vpFactors.push('OBV资金流入+0.5');
   }
-  if (pricePosition20_high > 0.85 && obvPosition20 < 0.4 && obvPosition20 < 0.4) {
+  if (pricePosition20_high > 0.85 && obvPosition20 < 0.4) {
     vpScore -= 2.0;
     vpFactors.push('高位背离-2');
   } else if (pricePosition20_high > 0.85 && obvPosition20 < 0.5) {
@@ -308,7 +330,7 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
     if (vols[i] > avg * 2.0) anomalyIdx.push({ i, type: closes[i] < opens[i] ? 'high' : 'normal' });
   }
 
-  // ---- 返回 ----
+  // ---- 返回完整对象 ----
   return {
     overall,
     action,
@@ -321,20 +343,14 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
     trendStrength: trendStrength,
     trendWeight: trendWeight,
     bollInfo: {
-      upper: bollUpper,
-      mid: bollMid,
-      lower: bollLower,
-      position: bollPosition,
+      upper: bollUpper, mid: bollMid, lower: bollLower,
+      position: Math.min(1, Math.max(0, bollPosition)),
       width: bollWidth,
-      widthChange: bollWidthChange,
+      widthChange: bollWidthChange || 0,
       isExpanding: bollWidthChange > 0.001,
       isContracting: bollWidthChange < -0.001
     },
-    maInfo: {
-      ma5, ma10, ma20, ma60,
-      alignment: maOrder,
-      slope5: ma5Slope
-    },
+    maInfo: { ma5, ma10, ma20, ma60, alignment: maOrder, slope5: ma5Slope },
     pivotLabel: (price > pivots.classic.R1) ? '突破R1' : (price > pivots.classic['轴心点']) ? '轴上' : (price < pivots.classic.S1) ? '跌破S1' : (price < pivots.classic['轴心点']) ? '轴下' : '中性',
     pivotBreakdown: price < pivots.classic.S1 ? { level: 'S1', from: pivots.classic.S1, to: 'S2' } : null,
     pivotBreakout: price > pivots.classic.R1 ? { level: 'R1', from: pivots.classic.R1, target: 'R2' } : null,
@@ -352,9 +368,9 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
       direction: trendDir,
       strength: trendStrength,
       score: trendScore,
-      bollPosition: bollPosition,
+      bollPosition: Math.min(1, Math.max(0, bollPosition)),
       maAlignment: maOrder,
-      adx: adx
+      adx: adx || 0
     }
   };
 }
