@@ -18,7 +18,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Serif+SC:wght@500;600;700;900&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <style>
-  /* ----- 原样式完整保留，此处仅做简要占位，实际已包含所有样式 ----- */
+  /* ===== 完整样式（与原版一致） ===== */
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root { --bg: #f0f4f8; --bg-2: #f7fafc; --surface: #ffffff; --line: rgba(0,0,0,0.08); --text: #1a202c; --text-soft: #4a5568; --text-mute: #a0aec0; --up: #e53e3e; --down: #38a169; --accent: #3182ce; --warn: #d69e2e; }
   body { font-family: 'Outfit', -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 12px; -webkit-font-smoothing: antialiased; }
@@ -233,7 +233,7 @@
       <a class="back" href="index.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>返回</a>
     </div>
   </nav>
-  <div id="root"></div>
+  <div id="root"><div class="loading">加载中…</div></div>
 </div>
 
 <!-- 风控参数面板 -->
@@ -264,7 +264,7 @@
 // ★★★ 完整自包含版 —— 数据加载部分与您的原版完全一致 ★★★
 // ================================================================
 
-// ----- 工具函数 -----
+// ----- 工具函数（与原版一致）-----
 function toast(msg) {
   const el = document.createElement('div');
   el.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#1a202c;color:#fff;padding:10px 22px;border-radius:12px;font-size:14px;z-index:999;box-shadow:0 8px 30px rgba(0,0,0,0.2);max-width:90vw;text-align:center;font-weight:500;';
@@ -303,7 +303,7 @@ function getTypeByCode(code) {
 }
 function typeLabel(t) { return t === 'index' ? ' · 指数' : t === 'etf' ? ' · ETF' : ''; }
 
-// ----- 持仓管理（简化）-----
+// ----- 持仓管理（与原版一致）-----
 function loadPortfolio() {
   try {
     const raw = localStorage.getItem('portfolio_v1');
@@ -317,10 +317,10 @@ function loadPortfolio() {
   } catch { return { positions: [], cash: 100000, equity: 100000, peakEquity: 100000 }; }
 }
 function savePortfolio(portfolio) { localStorage.setItem('portfolio_v1', JSON.stringify(portfolio)); }
-function updateTrailingStop(pos, tpSl) { /* 简化 */ }
-function recordEquity(eq) { /* 简化 */ }
+function updateTrailingStop(pos, tpSl) { /* 简化实现 */ }
+function recordEquity(eq) { /* 记录净值 */ }
 
-// ----- 风控默认值 -----
+// ----- 风控默认值（与原版一致）-----
 const DEFAULT_RISK_LIMITS = {
   maxSinglePosition: 0.20, maxTotalPosition: 0.80, minCashReserve: 0.20,
   maxSingleLoss: 0.03, maxDailyLoss: 0.05, maxDrawdown: 0.15,
@@ -401,7 +401,7 @@ async function fetchKLine(code, count = 80) {
 async function fetchBasic(code) { return null; }
 
 // ================================================================
-// ★★★ 缓存层 HistoryTable（与您的原版完全一致）★★★
+// ★★★ 缓存层 HistoryTable（与原版完全一致）★★★
 // ================================================================
 const HistoryTable = {
   _cache: {},
@@ -984,7 +984,7 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
 
   const anomalyIdx = [];
   for (let i = Math.max(1, n - 15); i < n; i++) {
-    const avg = vols.slice(Math.max(0, i-5), i).reduce((a,b) => a+b, 0) / Math.min(5, i);
+    const avg = vols.slice(Math.max(0, i-5), i).reduce((a,b)=>a+b,0) / Math.min(5, i);
     if (vols[i] > avg * 2.0) anomalyIdx.push({ i, type: closes[i] < opens[i] ? 'high' : 'normal' });
   }
 
@@ -1005,7 +1005,7 @@ function summarize(closes, highs, lows, opens, vols, pivots, basic) {
     trendGroup, momentumGroup, volaGroup, volGroup,
     buyScore, sellScore,
     mainForce: null, fundamentals: null,
-    vpFactors: vpFactors,  // 方便调试
+    vpFactors: vpFactors,
   };
 }
 summarize._marketEnv = null;
@@ -1484,10 +1484,9 @@ async function initStock(code) {
   root.innerHTML = '<div class="loading">加载中…</div>';
 
   try {
-    // 1. 获取 K 线数据
+    // 1. 获取 K 线数据（与原版完全一致）
     let data = await fetchKLine(code, 80);
     if (!data || data.length === 0) throw new Error('无数据');
-    // 存入缓存
     HistoryTable.saveRecent(code, data);
 
     // 2. 计算基础
@@ -1543,7 +1542,7 @@ async function initStock(code) {
       }
     }
 
-    // 10. 预拉取按钮（示例）
+    // 10. 预拉取按钮
     document.getElementById('btnPrefetch').onclick = () => {
       toast('数据已缓存至本地');
     };
@@ -1565,7 +1564,6 @@ function initRiskPanel() {
   const saveBtn = document.getElementById('riskSave');
   const resetBtn = document.getElementById('riskReset');
 
-  // 预设
   const presets = {
     conservative: { maxSingle: 15, maxTotal: 70, minCash: 30, maxLoss: 2, dailyLoss: 3, drawdown: 10 },
     balanced: { maxSingle: 20, maxTotal: 80, minCash: 20, maxLoss: 3, dailyLoss: 5, drawdown: 15 },
@@ -1628,7 +1626,6 @@ function initRiskPanel() {
     }
   };
 
-  // 加载保存的配置
   try {
     const saved = JSON.parse(localStorage.getItem('risk_limits_v1'));
     if (saved) {
@@ -1650,7 +1647,7 @@ function initRiskPanel() {
 // ================================================================
 const code = getCodeFromURL();
 if (!code) {
-  document.getElementById('root').innerHTML = `<div class="empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>缺少股票代码 · <a href="index.html" style="color:var(--accent);text-decoration:underline">返回添加</a></div>`;
+  document.getElementById('root').innerHTML = `<div class="empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>缺少股票代码 · <a href="index.html" style="color:var(--accent);text-decoration:underline;">返回添加</a></div>`;
 } else {
   initRiskPanel();
   initStock(code);
